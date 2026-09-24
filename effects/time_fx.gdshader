@@ -1,5 +1,6 @@
-// Efecto de pantalla al congelar el tiempo (estilo Sandevistan):
-// onda expansiva, destello, tinte, aberración cromática, viñeta y scanlines.
+// Efecto de pantalla de las habilidades de tiempo: onda expansiva, destello,
+// inversión de color, tinte, aberración cromática, viñeta y scanlines.
+// time_fx.gd ajusta los parámetros según la habilidad (Sandevistan o detener).
 shader_type canvas_item;
 
 uniform sampler2D screen_texture : hint_screen_texture, filter_nearest;
@@ -11,6 +12,9 @@ uniform float wave_strength = 0.05;
 uniform vec2 center = vec2(0.5);
 uniform float aspect = 1.7778;
 uniform vec4 tint : source_color = vec4(0.62, 1.0, 0.42, 1.0);
+uniform float desaturation : hint_range(0.0, 1.0) = 0.6;
+uniform float scanlines : hint_range(0.0, 1.0) = 1.0;
+uniform float invert : hint_range(0.0, 1.0) = 0.0; // destello en negativo
 
 void fragment() {
 	vec2 d = SCREEN_UV - center;
@@ -40,15 +44,16 @@ void fragment() {
 
 	// Corrección de color: desatura y tiñe
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
-	vec3 graded = mix(col, vec3(lum) * tint.rgb * 1.2, 0.6);
+	vec3 graded = mix(col, vec3(lum) * tint.rgb * 1.2, desaturation);
 	col = mix(col, graded, intensity);
 
 	col += tint.rgb * (ring * 0.55 + flash * 0.6);
+	col = mix(col, vec3(1.0) - col, invert);
 
 	// Viñeta y scanlines
 	float vig = smoothstep(0.55, 1.15, length((SCREEN_UV - 0.5) * vec2(aspect, 1.0)));
 	col *= 1.0 - vig * 0.55 * intensity;
-	col *= 1.0 - intensity * 0.07 * mod(floor(FRAGCOORD.y), 2.0);
+	col *= 1.0 - intensity * scanlines * 0.07 * mod(floor(FRAGCOORD.y), 2.0);
 
 	COLOR = vec4(col, 1.0);
 }
