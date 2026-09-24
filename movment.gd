@@ -6,6 +6,7 @@ const SLOW_TIME_SCALE = 0.3
 
 @onready var animationplayer = $AnimationPlayer
 @onready var sprite2D = $Sprite2D
+@onready var time_stop_fx = $TimeStopFX
 
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
@@ -21,8 +22,9 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0, SPEED)
 
 	if Input.is_action_just_pressed("stop_time"):
-		toggle_time_scale(0.0)
+		set_time_frozen(not get_tree().paused)
 	elif Input.is_action_just_pressed("slow_time"):
+		set_time_frozen(false)
 		toggle_time_scale(SLOW_TIME_SCALE)
 
 	move_and_slide()
@@ -32,6 +34,16 @@ func _physics_process(delta: float) -> void:
 		sprite2D.flip_h = false
 	elif direction == -1:
 		sprite2D.flip_h = true
+
+# Congela el mundo pausando el árbol de escena. El jugador (process_mode
+# Always) sigue moviéndose, como con el Sandevistan.
+func set_time_frozen(frozen: bool) -> void:
+	if get_tree().paused == frozen:
+		return
+	if frozen:
+		Engine.time_scale = 1.0
+	get_tree().paused = frozen
+	time_stop_fx.set_active(frozen)
 
 func toggle_time_scale(target_scale: float) -> void:
 	if Engine.time_scale == target_scale:
