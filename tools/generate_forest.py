@@ -5,10 +5,11 @@ Requiere Pillow (pip install pillow).
 
 Salida en assets/forest/:
   bg_0_sky.png ... bg_4_near.png  capas de 384x216 que se repiten en horizontal
-  tiles.png                       atlas 3x3 de tiles de 16x16:
+  tiles.png                       atlas 3x4 de tiles de 16x16:
                                     fila 0: pasto (borde izq, centro, borde der)
                                     fila 1: tierra (borde izq, centro, borde der)
                                     fila 2: plataforma de madera (izq, centro, der)
+                                    fila 3: púas para fosos (solo la primera columna)
 
 Las capas están pensadas para una vista de 384x216 donde el suelo empieza
 en la fila 152 (la parte de abajo queda tapada por los tiles).
@@ -62,6 +63,8 @@ EDGE = rgb("#2b1d14")
 WOOD = rgb("#9a6a3f")
 WOOD_LIGHT = rgb("#b98352")
 WOOD_DARK = rgb("#6b4529")
+SPIKE = rgb("#8a8f99")
+SPIKE_LIGHT = rgb("#c3c8cf")
 
 
 class Layer:
@@ -232,7 +235,7 @@ def near_foliage():
 
 
 def tiles():
-    atlas = Layer(TILE * 3, TILE * 3)
+    atlas = Layer(TILE * 3, TILE * 4)
     img = atlas.img
     rnd = random.Random(5)
 
@@ -300,6 +303,22 @@ def tiles():
                 put(col, 2, sx + 2, y, EDGE)
             for x in range(sx - 1, sx + 3):
                 put(col, 2, x, 11, EDGE)
+
+    # Púas para el fondo de los fosos (solo decorativo, sin colisión)
+    for x in range(TILE):
+        peak = x % 8
+        h = 7 - abs(peak - 3.5) * 2 + 3
+        for y in range(TILE):
+            if y >= TILE - 4:
+                c = DIRT_DARK
+            elif y >= TILE - 4 - h:
+                c = SPIKE_LIGHT if peak < 4 else SPIKE
+            else:
+                continue
+            put(0, 3, x, y, c)
+        top = int(TILE - 4 - h)
+        if 0 <= top - 1:
+            put(0, 3, x, top - 1, EDGE)
     return atlas
 
 

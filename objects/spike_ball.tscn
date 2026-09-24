@@ -1,0 +1,28 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://objects/mover.gd" id="1_mavm0"]
+[ext_resource type="Texture2D" path="res://objects/spike_ball.png" id="2_ymfbv"]
+[ext_resource type="Script" path="res://objects/hazard.gd" id="3_mrp7i"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_2xcls"]
+radius = 5.0
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_w2qqq"]
+radius = 7.0
+
+[node name="SpikeBall" type="AnimatableBody2D" unique_id=20722305]
+script = ExtResource("1_mavm0")
+period = 1.6
+roll_radius = 8.0
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1430381643]
+texture = ExtResource("2_ymfbv")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1036706893]
+shape = SubResource("CircleShape2D_2xcls")
+
+[node name="Hazard" type="Area2D" parent="." unique_id=1232530805]
+script = ExtResource("3_mrp7i")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hazard" unique_id=2049299694]
+shape = SubResource("CircleShape2D_w2qqq")

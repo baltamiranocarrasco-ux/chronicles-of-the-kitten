@@ -1,12 +1,15 @@
 extends CharacterBody2D
 
-const SPEED = 300.0
-const JUMP_VELOCITY = -400.0
+const SPEED = 130.0
+const JUMP_VELOCITY = -320.0 # ~52 px de altura con la gravedad por defecto (980)
+const FALL_LIMIT = 40.0 # si cae más abajo (fosos), reaparece
 const SLOW_TIME_SCALE = 0.3
 
 @onready var animationplayer = $AnimationPlayer
 @onready var sprite2D = $Sprite2D
 @onready var time_stop_fx = $TimeStopFX
+
+@onready var spawn_position: Vector2 = global_position
 
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
@@ -30,6 +33,9 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	animations(direction)
 
+	if global_position.y > FALL_LIMIT:
+		respawn()
+
 	if direction == 1:
 		sprite2D.flip_h = false
 	elif direction == -1:
@@ -44,6 +50,10 @@ func set_time_frozen(frozen: bool) -> void:
 		Engine.time_scale = 1.0
 	get_tree().paused = frozen
 	time_stop_fx.set_active(frozen)
+
+func respawn() -> void:
+	global_position = spawn_position
+	velocity = Vector2.ZERO
 
 func toggle_time_scale(target_scale: float) -> void:
 	if Engine.time_scale == target_scale:
