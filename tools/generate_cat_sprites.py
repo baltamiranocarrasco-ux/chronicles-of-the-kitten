@@ -28,7 +28,9 @@ PUPIL = (20, 20, 20, 255)
 NOSE = (232, 122, 138, 255)
 EAR_IN = (240, 160, 160, 255)
 
-OUT_DIR = Path(__file__).resolve().parent.parent / "assets" / "cat"
+ROOT = Path(__file__).resolve().parent.parent
+OUT_DIR = ROOT / "assets" / "cat"
+ICON_BG = "#3b6f8f"
 
 
 class Canvas:
@@ -204,6 +206,38 @@ def fall_frames():
     ]
 
 
+def write_icon(px):
+    """Escribe icon.svg (128x128) con el primer cuadro de idle en pixel art."""
+    xs = [x for x, _ in px]
+    ys = [y for _, y in px]
+    # Centrar el gato dentro del lienzo de 32x32
+    ox = (FRAME - (max(xs) - min(xs) + 1)) // 2 - min(xs)
+    oy = (FRAME - (max(ys) - min(ys) + 1)) // 2 - min(ys)
+    rects = []
+    for y in range(FRAME):
+        x = 0
+        while x < FRAME:
+            color = px.get((x, y))
+            if color is None:
+                x += 1
+                continue
+            start = x
+            while px.get((x, y)) == color:
+                x += 1
+            hexc = "#%02x%02x%02x" % color[:3]
+            rects.append(f'<rect x="{(start + ox) * 4}" y="{(y + oy) * 4}" '
+                         f'width="{(x - start) * 4}" height="4" fill="{hexc}"/>')
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" '
+        'viewBox="0 0 128 128" shape-rendering="crispEdges">\n'
+        f'<rect width="128" height="128" rx="16" fill="{ICON_BG}"/>\n'
+        + "\n".join(rects) + "\n</svg>\n"
+    )
+    out = ROOT / "icon.svg"
+    out.write_text(svg)
+    print(f"Guardado {out}")
+
+
 def main():
     sheet = Image.new("RGBA", (FRAME * COLS, FRAME * ROWS), (0, 0, 0, 0))
     rows = [idle_frames(), run_frames(), jump_frames(), fall_frames()]
@@ -215,6 +249,7 @@ def main():
     out = OUT_DIR / "cat_sheet.png"
     sheet.save(out)
     print(f"Guardado {out}")
+    write_icon(rows[0][0])
 
 
 if __name__ == "__main__":
