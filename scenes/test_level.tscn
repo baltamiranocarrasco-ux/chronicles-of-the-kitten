@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://b7kittestlvl1"]
+
+[ext_resource type="PackedScene" uid="uid://b7kitplayer01" path="res://scenes/player.tscn" id="1_player"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_floor"]
+size = Vector2(1200, 32)
+
+[node name="TestLevel" type="Node2D"]
+
+[node name="Floor" type="StaticBody2D" parent="."]
+position = Vector2(0, 100)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Floor"]
+shape = SubResource("RectangleShape2D_floor")
+
+[node name="ColorRect" type="ColorRect" parent="Floor"]
+offset_left = -600.0
+offset_top = -16.0
+offset_right = 600.0
+offset_bottom = 16.0
+color = Color(0.36, 0.25, 0.2, 1)
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+zoom = Vector2(3, 3)
