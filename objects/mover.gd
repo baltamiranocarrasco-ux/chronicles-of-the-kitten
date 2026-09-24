@@ -14,6 +14,12 @@ enum Motion {
 @export_range(0.0, 1.0) var phase_offset := 0.0 ## desfase para no ir sincronizado con otros
 @export var roll_radius := 0.0 ## si es > 0, el Sprite2D gira como si rodara
 
+@export_group("Slam")
+## Fracciones del ciclo para SLAM (el resto del ciclo es la subida lenta)
+@export_range(0.0, 1.0) var slam_hold_up := 0.35 ## esperando arriba
+@export_range(0.0, 1.0) var slam_fall := 0.1 ## cayendo
+@export_range(0.0, 1.0) var slam_hold_down := 0.2 ## esperando abajo
+
 var _t := 0.0
 @onready var _origin := position
 @onready var _sprite: Node2D = get_node_or_null("Sprite2D")
@@ -31,13 +37,15 @@ func _physics_process(delta: float) -> void:
 func _curve(p: float) -> float:
 	match motion:
 		Motion.SLAM:
-			if p < 0.35:
+			var fall_end := slam_hold_up + slam_fall
+			var down_end := fall_end + slam_hold_down
+			if p < slam_hold_up:
 				return 0.0
-			if p < 0.45:
-				var f := (p - 0.35) / 0.1
+			if p < fall_end:
+				var f := (p - slam_hold_up) / slam_fall
 				return f * f
-			if p < 0.65:
+			if p < down_end:
 				return 1.0
-			return 1.0 - (p - 0.65) / 0.35
+			return 1.0 - (p - down_end) / (1.0 - down_end)
 		_:
 			return 0.5 - 0.5 * cos(p * TAU)

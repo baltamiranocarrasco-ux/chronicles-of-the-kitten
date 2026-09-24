@@ -19,6 +19,8 @@ const LEVEL_UID := "uid://b7kittestlvl1"
 const MOVER := preload("res://objects/mover.gd")
 const HAZARD := preload("res://objects/hazard.gd")
 const CHECKPOINT := preload("res://objects/checkpoint.gd")
+const RAIN := preload("res://objects/chestnut_rain.gd")
+const CRUSHER_PERIOD := 1.0
 
 const PARALLAX_LAYERS := [
 	["Sky", "res://assets/forest/bg_0_sky.png", 0.0],
@@ -36,7 +38,7 @@ const GROUND_STEPS := [
 ]
 const PITS := [[45, 58]]
 const STATIC_PLATFORMS := [[96, 100, -2], [103, 107, -4], [110, 113, -2]]
-const CHECKPOINTS := [[41, 0], [60, 0], [92, 0], [122, 0], [158, 0], [180, -6]]
+const CHECKPOINTS := [[41, 0], [60, 0], [92, 0], [122, 0], [158, 0], [168, 0], [180, -6]]
 
 
 func _init() -> void:
@@ -55,15 +57,23 @@ func _init() -> void:
 	# Sección 1: foso con plataformas móviles (congela el tiempo para subirte fácil)
 	place(objects, platform_scene, "PitPlatform1", Vector2(744, 6), {travel = Vector2(80, 0), period = 2.4})
 	place(objects, platform_scene, "PitPlatform2", Vector2(840, 6), {travel = Vector2(80, 0), period = 2.4})
-	# Sección 2: aplastadores (pasa por debajo con cámara lenta o congelados arriba)
+	# Sección 2: aplastadores rápidos. Pasan casi todo el ciclo abajo y se abren
+	# ~0.23 s, menos de lo que tarda el gato en cruzar (~0.35 s): hace falta
+	# cámara lenta (Q) o congelarlos arriba (R)
 	for i in 3:
 		place(objects, crusher_scene, "Crusher%d" % (i + 1), Vector2((68 + i * 8) * T, -96),
-				{phase_offset = i / 3.0})
+				{phase_offset = i / 3.0, period = CRUSHER_PERIOD, slam_hold_up = 0.06,
+				slam_fall = 0.05, slam_hold_down = 0.74})
 	# Sección 3: castañas con púas rodando
 	for i in 3:
 		place(objects, ball_scene, "SpikeBall%d" % (i + 1), Vector2((126 + i * 10) * T, -8),
 				{phase_offset = i * 0.3})
-	# Sección 4: ascensor rápido hasta la cornisa alta
+	# Sección 4: lluvia de castañas. Solo se cruza congelando el tiempo (R)
+	var rain := Node2D.new()
+	rain.set_script(RAIN)
+	rain.position = Vector2(164 * T, 0)
+	add(objects, rain, "ChestnutRain")
+	# Sección 5: ascensor rápido hasta la cornisa alta
 	place(objects, platform_scene, "Elevator", Vector2(172 * T, 6),
 			{travel = Vector2(0, -88), period = 2.0})
 
@@ -166,11 +176,15 @@ func build_crusher() -> Node:
 	body.set("period", 2.0)
 	body.set("motion", 1) # SLAM
 	add(body, sprite("res://objects/crusher.png", Vector2(0, -56)), "Sprite2D")
-	add(body, collision(rect_shape(Vector2(28, 38)), Vector2(0, -5)), "CollisionShape2D")
+	# El cuerpo sólido incluye las púas: mientras bloquea, el gato no puede
+	# meterse debajo, y cuando deja de bloquear las púas ya pasaron por encima
+	add(body, collision(rect_shape(Vector2(28, 48)), Vector2(0, 0)), "CollisionShape2D")
 	var hazard := Area2D.new()
 	hazard.set_script(HAZARD)
 	add(body, hazard, "Hazard")
-	add(hazard, collision(rect_shape(Vector2(28, 12)), Vector2(0, 19)), "CollisionShape2D", body)
+	# Dentro del cuerpo y más angosta: solo daña si el tronco cae encima del gato,
+	# no al apoyarse en su costado
+	add(hazard, collision(rect_shape(Vector2(24, 10)), Vector2(0, 18)), "CollisionShape2D", body)
 	return body
 
 
