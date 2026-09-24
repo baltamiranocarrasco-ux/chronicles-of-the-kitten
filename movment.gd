@@ -2,6 +2,7 @@ extends CharacterBody2D
 
 const SPEED = 300.0
 const JUMP_VELOCITY = -400.0
+const SLOW_TIME_SCALE = 0.3
 
 @onready var animationplayer = $AnimationPlayer
 @onready var sprite2D = $Sprite2D
@@ -21,7 +22,7 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("slow_time"):
 		if Engine.time_scale == 1.0:
-			Engine.time_scale = 0.0
+			Engine.time_scale = SLOW_TIME_SCALE
 		else:
 			Engine.time_scale = 1.0
 
