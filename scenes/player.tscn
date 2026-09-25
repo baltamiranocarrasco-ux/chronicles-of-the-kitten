@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" path="res://assets/cat/cat_sheet.png" id="2_sheet"]
 [ext_resource type="Script" path="res://effects/time_fx.gd" id="3_fx"]
 [ext_resource type="Script" path="res://time_powers.gd" id="4_powers"]
-[ext_resource type="Script" path="res://ui/energy_bar.gd" id="5_bar"]
+[ext_resource type="Script" path="res://effects/spine_meter.gd" id="5_spine"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
 size = Vector2(20, 12)
@@ -191,15 +191,5 @@ script = ExtResource("3_fx")
 [node name="TimePowers" type="Node" parent="."]
 script = ExtResource("4_powers")
 
-[node name="HUD" type="CanvasLayer" parent="."]
-layer = 20
-
-[node name="EnergyBar" type="Control" parent="HUD"]
-layout_mode = 3
-anchors_preset = 0
-offset_left = 8.0
-offset_top = 8.0
-offset_right = 68.0
-offset_bottom = 13.0
-script = ExtResource("5_bar")
-powers_path = NodePath("../../TimePowers")
+[node name="SpineMeter" type="Node2D" parent="."]
+script = ExtResource("5_spine")

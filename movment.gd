@@ -23,6 +23,7 @@ var slide_cooldown := 0.0
 
 @onready var animationplayer = $AnimationPlayer
 @onready var sprite2D = $Sprite2D
+@onready var time_powers: TimePowers = $TimePowers
 
 @onready var spawn_position: Vector2 = global_position
 
@@ -46,7 +47,9 @@ func _physics_process(delta: float) -> void:
 		jump_pressed = false
 
 	var sprinting := Input.is_action_pressed("sprint") and direction != 0.0
-	_update_slide(delta * time_boost, direction, sprinting)
+	# La sobrecarga de las habilidades de tiempo deja al gato más lento
+	var speed_mult := TimePowers.OVERLOAD_SPEED if time_powers.is_overloaded() else 1.0
+	_update_slide(delta * time_boost, direction, sprinting, speed_mult)
 
 	if jump_pressed and is_on_floor():
 		velocity.y = JUMP_VELOCITY
@@ -55,7 +58,7 @@ func _physics_process(delta: float) -> void:
 	if sliding:
 		pass # la velocidad la maneja _update_slide
 	elif direction:
-		var target := SPRINT_SPEED if sprinting else SPEED
+		var target := (SPRINT_SPEED if sprinting else SPEED) * speed_mult
 		# En el aire no se pierde el impulso de un deslizamiento o una carrera
 		var airborne := not is_on_floor() or velocity.y < 0.0 # incluye el cuadro del salto
 		if airborne and signf(velocity.x) == signf(direction):
@@ -88,12 +91,12 @@ func respawn() -> void:
 
 # Ctrl mientras corre (Shift) en el suelo: se desliza en la dirección en que
 # mira, frenando hasta la velocidad de carrera. No se puede girar mientras dura.
-func _update_slide(real_delta: float, direction: float, sprinting: bool) -> void:
+func _update_slide(real_delta: float, direction: float, sprinting: bool, speed_mult: float) -> void:
 	slide_cooldown = maxf(slide_cooldown - real_delta, 0.0)
 	if sliding:
 		var facing := -1.0 if sprite2D.flip_h else 1.0
 		var speed := absf(velocity.x) - SLIDE_FRICTION * real_delta
-		if not is_on_floor() or speed <= SPEED or state != State.NORMAL:
+		if not is_on_floor() or speed <= SPEED * speed_mult or state != State.NORMAL:
 			sliding = false
 			slide_cooldown = SLIDE_COOLDOWN
 		else:
@@ -102,7 +105,7 @@ func _update_slide(real_delta: float, direction: float, sprinting: bool) -> void
 	if (state == State.NORMAL and sprinting and is_on_floor() and slide_cooldown <= 0.0
 			and Input.is_action_just_pressed("slide")):
 		sliding = true
-		velocity.x = signf(direction) * SLIDE_SPEED
+		velocity.x = signf(direction) * SLIDE_SPEED * speed_mult
 
 # Tras SLEEP_AFTER segundos quieto da vueltas y se duerme. Si lo intentan
 # mover mientras se acuesta o duerme, se enoja antes de volver a obedecer.
