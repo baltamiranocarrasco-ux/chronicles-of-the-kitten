@@ -5,10 +5,10 @@ extends Node2D
 ## Corre con el árbol pausado y sus animaciones ignoran Engine.time_scale.
 
 const TRAIL_COLORS: Array[Color] = [
-	Color(0.55, 1.0, 0.3),
-	Color(1.0, 0.95, 0.3),
-	Color(1.0, 0.35, 0.75),
-	Color(0.35, 0.9, 1.0),
+	Color(1.0, 0.25, 0.85),
+	Color(0.3, 0.95, 1.0),
+	Color(1.0, 0.92, 0.25),
+	Color(0.65, 0.45, 1.0),
 ]
 const TRAIL_INTERVAL := 0.045
 const TRAIL_LIFETIME := 0.45
