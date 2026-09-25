@@ -11,8 +11,7 @@ Hoja de 8 columnas x 7 filas, cuadros de 32x32, gato mirando a la derecha:
   fila 4: acostarse (7)   fila 5: dormir (8)   fila 6: enojo (8)
 
 Además reescribe las animaciones de scenes/player.tscn según ANIMATIONS,
-para que la hoja y las animaciones siempre coincidan. Si el jugador usa la hoja
-importada con tools/import_cat_sheet.py, correr este script vuelve al gato generado.
+para que la hoja y las animaciones siempre coincidan.
 """
 
 import math
@@ -527,13 +526,6 @@ def update_player_scene():
             raise SystemExit(f"No encontré la animación {name} en {path}")
         text = pattern.sub(lambda _m: _animation_resource(name, loop, keys), text, count=1)
     text = re.sub(r"hframes = \d+\nvframes = \d+", f"hframes = {COLS}\nvframes = {ROWS}", text)
-    # Deshace lo que cambia tools/import_cat_sheet.py (textura, desplazamiento y colisión)
-    text = re.sub(r'(type="Texture2D" path=")[^"]+(" id="2_sheet")',
-                  r"\g<1>res://assets/cat/cat_sheet.png\g<2>", text)
-    text = re.sub(r"\noffset = Vector2\([^)]*\)", "", text)
-    text = re.sub(r'(id="RectangleShape2D_body"\]\nsize = )Vector2\([^)]*\)', r"\g<1>Vector2(20, 12)", text)
-    text = re.sub(r'(\[node name="CollisionShape2D" type="CollisionShape2D" parent="\."\]\nposition = )'
-                  r'Vector2\([^)]*\)', r"\g<1>Vector2(0, 9)", text)
     path.write_text(text)
     print(f"Actualizado {path}")
 
