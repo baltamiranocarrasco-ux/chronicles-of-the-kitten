@@ -3,24 +3,25 @@
 Uso:  python3 tools/generate_cat_sprites.py
 Requiere Pillow (pip install pillow).
 
-Hoja de 6 columnas x 6 filas, cuadros de 32x32, gato mirando a la derecha:
-  fila 0: idle (4 cuadros)   -> frames 0-3
-  fila 1: run  (6 cuadros)   -> frames 6-11
-  fila 2: jump (2 cuadros)   -> frames 12-13
-  fila 3: fall (2 cuadros)   -> frames 18-19
-  fila 4: vueltas y acostarse -> 24 frente, 25 lado opuesto, 26 espalda,
-                                 27 agachado, 28 echado, 29 echado con la cabeza abajo
-  fila 5: dormir y enojo     -> 30-32 durmiendo (respira, "z"),
-                                 33 sobresalto, 34 lomo arqueado, 35 bufido
+Hoja de 8 columnas x 7 filas, cuadros de 32x32, gato mirando a la derecha:
+  fila 0: idle (8)        fila 1: run (8)
+  fila 2: jump (4) + fall (4)
+  fila 3: vistas para girar: lado, 2 intermedias, frente, 2 intermedias,
+          lado opuesto, espalda
+  fila 4: acostarse (7)   fila 5: dormir (8)   fila 6: enojo (8)
+
+Además reescribe las animaciones de scenes/player.tscn según ANIMATIONS,
+para que la hoja y las animaciones siempre coincidan.
 """
 
 import math
+import re
 from pathlib import Path
 
 from PIL import Image
 
 FRAME = 32
-COLS, ROWS = 6, 6
+COLS, ROWS = 8, 7
 
 # Paleta (gato naranja atigrado)
 OUTLINE = (43, 29, 20, 255)
@@ -86,6 +87,7 @@ def draw_cat(
     tail=((7, 20), (4, 17), (3, 13), (4, 10)),
     blink=False,
     head_dy=0,
+    eyes="open",
 ):
     """legs: (dx, lift) para [trasera lejana, delantera lejana, trasera cercana, delantera cercana]."""
     c = Canvas()
@@ -125,16 +127,26 @@ def draw_cat(
     px = c.outlined()
 
     # Detalles sobre el contorno
-    if blink:
-        px[(25, hy)] = OUTLINE
-        px[(26, hy)] = OUTLINE
-    else:
-        px[(25, hy - 1)] = EYE
-        px[(25, hy)] = EYE
-        px[(26, hy - 1)] = PUPIL
-        px[(26, hy)] = PUPIL
+    draw_eyes(px, 25, hy, "closed" if blink else eyes)
     px[(29, hy + 1)] = NOSE
     return px
+
+
+def draw_eyes(px, x, y, state):
+    """Ojo de perfil de 2x2: abierto, entrecerrado (solo la fila de abajo) o cerrado."""
+    if state == "closed":
+        px[(x, y)] = OUTLINE
+        px[(x + 1, y)] = OUTLINE
+    elif state == "half":
+        px[(x, y - 1)] = OUTLINE
+        px[(x + 1, y - 1)] = OUTLINE
+        px[(x, y)] = EYE
+        px[(x + 1, y)] = PUPIL
+    else:
+        px[(x, y - 1)] = EYE
+        px[(x, y)] = EYE
+        px[(x + 1, y - 1)] = PUPIL
+        px[(x + 1, y)] = PUPIL
 
 
 def tail_wave(phase, amp=1.5):
@@ -148,72 +160,81 @@ def tail_wave(phase, amp=1.5):
 
 
 def idle_frames():
+    """8 cuadros: respiración suave, la cola ondea y parpadea en dos pasos al final."""
     frames = []
-    for i in range(4):
-        phase = i / 4 * 2 * math.pi
+    breath = [0, 0, 1, 1, 1, 1, 0, 0]
+    eyes = ["open"] * 6 + ["half", "closed"]
+    for i in range(8):
+        phase = i / 8 * 2 * math.pi
         frames.append(draw_cat(
-            body_y=1 if i in (1, 2) else 0,
-            head_dy=-1 if i in (1, 2) else 0,
-            tail=tail_wave(phase),
-            blink=(i == 3),
+            body_y=breath[i],
+            head_dy=-breath[i],
+            tail=tail_wave(phase, amp=2.0),
+            eyes=eyes[i],
         ))
     return frames
 
 
 def run_frames():
+    """8 cuadros de galope: patas en fase, el cuerpo rebota dos veces por ciclo."""
     frames = []
-    n = 6
+    n = 8
     for i in range(n):
         phase = i / n * 2 * math.pi
 
         def leg(p):
-            dx = round(3 * math.sin(p))
-            lift = max(0, round(2 * math.cos(p)))
+            dx = round(3.2 * math.sin(p))
+            lift = max(0, round(2.2 * math.cos(p)))
             return (dx, lift)
 
+        bob = -1 if i % 4 in (1, 2) else 0
+        tail_end = round(15 + math.sin(phase * 2) * 1.2)
         frames.append(draw_cat(
-            body_y=-1 if i % 3 == 1 else 0,
+            body_y=bob,
+            head_dy=1 if i % 4 == 0 else 0,
             legs=(
                 leg(phase + math.pi + 0.6),   # trasera lejana
                 leg(phase + 0.6),             # delantera lejana
                 leg(phase + math.pi),         # trasera cercana
                 leg(phase),                   # delantera cercana
             ),
-            tail=((7, 19), (4, 17), (2, 16), (0, 15)),
+            tail=((7, 19), (4, 17), (2, 16), (0, tail_end)),
         ))
     return frames
 
 
 def jump_frames():
+    """Impulso, subida y patas recogiéndose hacia el punto más alto."""
     return [
-        draw_cat(
-            body_y=-2,
-            legs=((-4, 2), (4, 4), (-5, 1), (5, 5)),
-            tail=((7, 19), (4, 16), (2, 12), (2, 9)),
-        ),
-        draw_cat(
-            body_y=-2,
-            legs=((-5, 3), (5, 5), (-6, 2), (6, 6)),
-            tail=((7, 19), (4, 15), (3, 11), (4, 8)),
-        ),
+        draw_cat(body_y=-1, legs=((-3, 0), (3, 2), (-4, 0), (4, 3)),
+                 tail=((7, 19), (4, 17), (2, 14), (1, 12))),
+        draw_cat(body_y=-2, legs=((-5, 2), (5, 4), (-6, 1), (6, 5)),
+                 tail=((7, 19), (4, 16), (2, 12), (2, 9))),
+        draw_cat(body_y=-2, legs=((-5, 3), (5, 5), (-6, 2), (6, 6)),
+                 tail=((7, 19), (4, 15), (3, 11), (4, 8))),
+        draw_cat(body_y=-2, legs=((-3, 4), (3, 5), (-4, 3), (4, 5)),
+                 tail=((7, 19), (4, 15), (4, 11), (5, 8))),
     ]
 
 
 def fall_frames():
-    return [
-        draw_cat(
-            body_y=-1,
-            legs=((-3, 0), (4, 1), (-2, 1), (5, 0)),
-            tail=((7, 19), (4, 14), (5, 10), (7, 7)),
-            head_dy=1,
-        ),
-        draw_cat(
-            body_y=-1,
-            legs=((-4, 1), (5, 0), (-3, 0), (6, 1)),
-            tail=((7, 19), (3, 14), (4, 9), (6, 6)),
-            head_dy=1,
-        ),
+    """Patas estirándose hacia el suelo; la cola aletea para equilibrarse."""
+    frames = []
+    tails = [
+        ((7, 19), (4, 14), (5, 10), (7, 7)),
+        ((7, 19), (3, 14), (4, 10), (6, 6)),
+        ((7, 19), (3, 14), (3, 9), (5, 6)),
+        ((7, 19), (4, 14), (4, 9), (6, 7)),
     ]
+    legs = [
+        ((-3, 0), (4, 1), (-2, 1), (5, 0)),
+        ((-4, 1), (5, 0), (-3, 0), (6, 1)),
+        ((-4, 0), (5, 1), (-3, 1), (6, 0)),
+        ((-3, 1), (4, 0), (-2, 0), (5, 1)),
+    ]
+    for i in range(4):
+        frames.append(draw_cat(body_y=-1, head_dy=1, legs=legs[i], tail=tails[i]))
+    return frames
 
 
 # --- poses nuevas: vueltas, acostarse, dormir y enojo -----------------------
@@ -275,14 +296,15 @@ def back_view():
     return overlay(px, tail)
 
 
-def draw_lying(head_down=False, eyes_closed=False, breathe=0, zs=()):
-    """Gato echado de lado mirando a la derecha. zs: posiciones (x, y) de las "z"."""
+def draw_lying(head_drop=0, eyes="open", breathe=0, zs=()):
+    """Gato echado de lado mirando a la derecha.
+    head_drop: 0 cabeza en alto ... 3 apoyada. zs: posiciones (x, y) de las "z"."""
     c = Canvas()
     c.poly([(8, 27), (4, 28), (5, 30), (12, 30)], FUR)   # cola enroscada
     c.ellipse(14, 26 - breathe * 0.5, 10, 3.5 + breathe * 0.5, FUR)
     c.ellipse(15, 28, 6, 1.5, BELLY)
     c.line(20, 28, 25, 29, FUR)                              # patas delanteras
-    hy = 24 if head_down else 21
+    hy = 21 + head_drop
     c.ellipse(23.5, hy, 5, 4.5, FUR)
     ex = 20
     for i in range(3):
@@ -294,14 +316,7 @@ def draw_lying(head_down=False, eyes_closed=False, breathe=0, zs=()):
     for sx in (10, 13, 16):
         c.set(sx, 23 - breathe, FUR_DARK)
     px = c.outlined()
-    if eyes_closed:
-        px[(25, hy)] = OUTLINE
-        px[(26, hy)] = OUTLINE
-    else:
-        px[(25, hy - 1)] = EYE
-        px[(25, hy)] = EYE
-        px[(26, hy - 1)] = PUPIL
-        px[(26, hy)] = PUPIL
+    draw_eyes(px, 25, hy, eyes)
     px[(29, hy + 1)] = NOSE
     for zx, zy in zs:
         z = Canvas()
@@ -314,7 +329,7 @@ def draw_lying(head_down=False, eyes_closed=False, breathe=0, zs=()):
     return px
 
 
-def draw_angry(peak_y=10, tail_top=4, hiss=False, hop=0):
+def draw_angry(peak_y=10, tail_top=4, hiss=False, hop=0, puff=1):
     """Lomo arqueado estilo gato de Halloween: patas rectas, pelo y cola erizados."""
     c = Canvas()
     foot = 29 - hop
@@ -326,10 +341,12 @@ def draw_angry(peak_y=10, tail_top=4, hiss=False, hop=0):
         y = 20 - hop - (20 - hop - peak_y) * math.sin(math.pi * t)
         pts.append((x, y))
         c.circle(x, y + 1, 3.6, FUR)
-    # Pelo erizado sobre el arco
+    # Pelo erizado sobre el arco (puff: 0 liso, 1 erizado, 2 muy erizado)
     for i, (x, y) in enumerate(pts[1:-1]):
-        if i % 2 == 0:
+        if puff and i % 2 == 0:
             c.set(round(x), round(y - 4), FUR)
+            if puff > 1:
+                c.set(round(x), round(y - 5), FUR)
     # Patas rectas y largas
     for lx in (7, 10, 18, 21):
         c.line(lx, 20 - hop, lx, foot, FUR if lx in (7, 18) else FUR_DARK)
@@ -366,27 +383,151 @@ def draw_angry(peak_y=10, tail_top=4, hiss=False, hop=0):
     return px
 
 
-def settle_frames():
-    idle = idle_frames()[0]
+def squash(px, scale):
+    """Comprime horizontalmente un cuadro alrededor del centro (vista intermedia al
+    girar). Toma el relleno de todo el tramo comprimido para no dejar huecos y
+    vuelve a trazar el contorno."""
+    c = Canvas()
+    for y in range(FRAME):
+        for x in range(FRAME):
+            a = 16 + (x - 16) / scale
+            b = 16 + (x + 1 - 16) / scale
+            colors = [px.get((sx, y)) for sx in range(math.floor(a), math.ceil(b))]
+            fill = [col for col in colors if col is not None and col != OUTLINE]
+            if fill:
+                # El color más frecuente del tramo (conserva rayas, panza y ojos)
+                c.set(x, y, max(set(fill), key=fill.count))
+    return c.outlined()
+
+
+def turn_frames():
+    side = idle_frames()[0]
+    other = mirror(side)
     return [
+        side,
+        squash(side, 0.7),
+        squash(side, 0.45),
         front_view(),
-        mirror(idle),
+        squash(other, 0.45),
+        squash(other, 0.7),
+        other,
         back_view(),
-        draw_cat(body_y=3, head_dy=1, tail=((7, 23), (4, 25), (2, 27), (0, 28))),
-        draw_lying(),
-        draw_lying(head_down=True, eyes_closed=True),
     ]
 
 
-def sleep_angry_frames():
+def lie_frames():
     return [
-        draw_lying(head_down=True, eyes_closed=True, breathe=0, zs=[(25, 14)]),
-        draw_lying(head_down=True, eyes_closed=True, breathe=1, zs=[(26, 10)]),
-        draw_lying(head_down=True, eyes_closed=True, breathe=0, zs=[(27, 6)]),
-        draw_angry(peak_y=13, tail_top=8, hop=2),
-        draw_angry(peak_y=9, tail_top=3),
-        draw_angry(peak_y=9, tail_top=3, hiss=True),
+        draw_cat(body_y=2, head_dy=1, tail=((7, 22), (4, 24), (2, 26), (0, 27))),
+        draw_cat(body_y=3, head_dy=1, tail=((7, 23), (4, 25), (2, 27), (0, 28))),
+        draw_cat(body_y=4, head_dy=1, tail=((7, 24), (4, 26), (3, 28), (1, 29))),
+        draw_lying(head_drop=0),
+        draw_lying(head_drop=1, eyes="half"),
+        draw_lying(head_drop=2, eyes="half"),
+        draw_lying(head_drop=3, eyes="closed"),
     ]
+
+
+def sleep_frames():
+    """Respiración lenta y una "z" que sube de a poco en diagonal."""
+    breath = [0, 0, 1, 1, 1, 1, 0, 0]
+    z_path = [(24, 16), (25, 14), (25, 12), (26, 10), (26, 8), (27, 6), (27, 4), (28, 2)]
+    return [draw_lying(head_drop=3, eyes="closed", breathe=breath[i], zs=[z_path[i]])
+            for i in range(8)]
+
+
+def angry_frames():
+    return [
+        draw_angry(peak_y=14, tail_top=9, hop=2, puff=0),    # 0 sobresalto
+        draw_angry(peak_y=12, tail_top=7, hop=3, puff=1),    # 1 en el aire
+        draw_angry(peak_y=11, tail_top=5, hop=1, puff=1),    # 2 cae arqueándose
+        draw_angry(peak_y=9, tail_top=3, puff=1),            # 3 lomo arqueado
+        draw_angry(peak_y=9, tail_top=3, puff=2),            # 4 pelo muy erizado
+        draw_angry(peak_y=9, tail_top=3, puff=2, hiss=True), # 5 bufido
+        draw_angry(peak_y=11, tail_top=6, puff=1),           # 6 se relaja
+        draw_angry(peak_y=13, tail_top=9, puff=0),           # 7 casi normal
+    ]
+
+
+def sheet_rows():
+    return [
+        idle_frames(),
+        run_frames(),
+        jump_frames() + fall_frames(),
+        turn_frames(),
+        lie_frames(),
+        sleep_frames(),
+        angry_frames(),
+    ]
+
+
+# --- animaciones de player.tscn -------------------------------------------
+# Cada animación: (loop, [(frame, duración en s), ...]). frame = fila * COLS + columna.
+
+def _row(r, cols, duration):
+    return [(r * COLS + c, duration) for c in cols]
+
+
+def _turn_circle(duration):
+    # lado, intermedias, frente, intermedias, lado opuesto, intermedias, espalda, intermedias
+    order = [0, 1, 2, 3, 4, 5, 6, 5, 4, 7, 2, 1]
+    return [(3 * COLS + c, duration) for c in order]
+
+
+ANIMATIONS = {
+    "idle": (True, _row(0, range(8), 1 / 7)),
+    "run": (True, _row(1, range(8), 1 / 13)),
+    "jump": (False, _row(2, range(4), 1 / 12)),
+    "fall": (True, _row(2, range(4, 8), 1 / 10)),
+    "settle": (False, _turn_circle(0.07) + _turn_circle(0.07) + [(3 * COLS, 0.1)]
+               + [(4 * COLS + c, d) for c, d in
+                  [(0, 0.1), (1, 0.1), (2, 0.1), (3, 0.3), (4, 0.2), (5, 0.2), (6, 0.3)]]),
+    "sleep": (True, _row(5, range(8), 1 / 5)),
+    "angry": (False, [(6 * COLS + c, d) for c, d in
+                      [(0, 0.06), (1, 0.06), (2, 0.08), (3, 0.1), (4, 0.15), (5, 0.25),
+                       (4, 0.1), (5, 0.2), (3, 0.1), (6, 0.1), (7, 0.1)]]),
+}
+
+
+def _animation_resource(name, loop, keys):
+    times, t = [], 0.0
+    for _, duration in keys:
+        times.append(round(t, 4))
+        t += duration
+    values = ", ".join(str(f) for f, _ in keys)
+    return f"""[sub_resource type="Animation" id="Animation_{name}"]
+resource_name = "{name}"
+length = {round(t, 4)}
+loop_mode = {1 if loop else 0}
+step = 0.01
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Sprite2D:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {{
+"times": PackedFloat32Array({", ".join(str(x) for x in times)}),
+"transitions": PackedFloat32Array({", ".join("1" for _ in keys)}),
+"update": 1,
+"values": [{values}]
+}}
+
+"""
+
+
+def update_player_scene():
+    path = ROOT / "scenes" / "player.tscn"
+    text = path.read_text()
+    for name, (loop, keys) in ANIMATIONS.items():
+        pattern = re.compile(
+            r'\[sub_resource type="Animation" id="Animation_%s"\].*?(?=\[sub_resource)' % name,
+            re.S)
+        if not pattern.search(text):
+            raise SystemExit(f"No encontré la animación {name} en {path}")
+        text = pattern.sub(lambda _m: _animation_resource(name, loop, keys), text, count=1)
+    text = re.sub(r"hframes = \d+\nvframes = \d+", f"hframes = {COLS}\nvframes = {ROWS}", text)
+    path.write_text(text)
+    print(f"Actualizado {path}")
 
 
 def write_icon(px):
@@ -423,9 +564,9 @@ def write_icon(px):
 
 def main():
     sheet = Image.new("RGBA", (FRAME * COLS, FRAME * ROWS), (0, 0, 0, 0))
-    rows = [idle_frames(), run_frames(), jump_frames(), fall_frames(),
-            settle_frames(), sleep_angry_frames()]
+    rows = sheet_rows()
     for r, frames in enumerate(rows):
+        assert len(frames) <= COLS, f"fila {r} con {len(frames)} cuadros"
         for col, px in enumerate(frames):
             for (x, y), color in px.items():
                 sheet.putpixel((col * FRAME + x, r * FRAME + y), color)
@@ -434,6 +575,7 @@ def main():
     sheet.save(out)
     print(f"Guardado {out}")
     write_icon(rows[0][0])
+    update_player_scene()
 
 
 if __name__ == "__main__":
