@@ -482,6 +482,8 @@ ANIMATIONS = {
                + [(4 * COLS + c, d) for c, d in
                   [(0, 0.1), (1, 0.1), (2, 0.1), (3, 0.3), (4, 0.2), (5, 0.2), (6, 0.3)]]),
     "sleep": (True, _row(5, range(8), 1 / 5)),
+    # Reutiliza el gato agachado de "acostarse" (sin cuadros nuevos)
+    "slide": (False, [(4 * COLS + 1, 0.05), (4 * COLS + 2, 0.5)]),
     "angry": (False, [(6 * COLS + c, d) for c, d in
                       [(0, 0.06), (1, 0.06), (2, 0.08), (3, 0.1), (4, 0.15), (5, 0.25),
                        (4, 0.1), (5, 0.2), (3, 0.1), (6, 0.1), (7, 0.1)]]),
@@ -522,9 +524,13 @@ def update_player_scene():
         pattern = re.compile(
             r'\[sub_resource type="Animation" id="Animation_%s"\].*?(?=\[sub_resource)' % name,
             re.S)
-        if not pattern.search(text):
-            raise SystemExit(f"No encontré la animación {name} en {path}")
-        text = pattern.sub(lambda _m: _animation_resource(name, loop, keys), text, count=1)
+        if pattern.search(text):
+            text = pattern.sub(lambda _m: _animation_resource(name, loop, keys), text, count=1)
+        else:
+            # Animación nueva: se agrega antes de la librería y se registra en ella
+            text = text.replace('[sub_resource type="AnimationLibrary"',
+                                _animation_resource(name, loop, keys) + '[sub_resource type="AnimationLibrary"', 1)
+            text = text.replace('_data = {\n', f'_data = {{\n&"{name}": SubResource("Animation_{name}"),\n', 1)
     text = re.sub(r"hframes = \d+\nvframes = \d+", f"hframes = {COLS}\nvframes = {ROWS}", text)
     path.write_text(text)
     print(f"Actualizado {path}")
