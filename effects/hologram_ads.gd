@@ -1,77 +1,106 @@
 extends Node2D
 ## Hologramas publicitarios de implantes cibernéticos sobre las azoteas.
-## En esta ciudad las piezas cibernéticas lo son todo, así que los anuncios
-## son prótesis que giran en 3D (alambre proyectado) y cambian de producto
-## cada pocos segundos con una interferencia.
+## En esta ciudad las piezas cibernéticas lo son todo: los anuncios son
+## prótesis en 3D de alambre fino (estilo plano CAD) que giran sobre el haz
+## de un proyector, con piezas que se mueven, y cambian de producto cada 6 s
+## colapsando en una línea de luz con estática. Entre los productos aparece
+## el aviso de retiro del propio gato (SUJETO K-7 · DESCARTADO).
 ##
-## Los proyectores están pintados en la capa con el color clave HOLO_KEY
-## (ver tools/generate_city.py); este nodo los busca en la textura y dibuja
-## encima el haz, el holograma y su letrero. Usa _process pausable: la Q lo
-## frena y la R lo deja congelado en el aire, como el resto del fondo.
+## Los proyectores están pintados en bg_3_mid y sus posiciones vienen de
+## assets/city/city_meta.gd. Usa _process pausable: la Q lo frena (y deja
+## estela) y la R lo congela a mitad de giro; el material del fondo lo pasa
+## a escala de grises.
 
-const HOLO_KEY := Color8(1, 254, 127)
-const COLORS := [Color(0.35, 0.95, 1.0), Color(1.0, 0.35, 0.85), Color(1.0, 0.72, 0.28)]
-const SLOT := 6.0 ## segundos que se muestra cada producto
-const SWITCH := 0.35 ## duración del colapso / despliegue al cambiar
-const LIFT := 34.0 ## altura del centro del holograma sobre el proyector
-const SPIN := 0.9 ## radianes por segundo
-const TILT := 0.3 ## inclinación hacia la cámara
+const META := preload("res://assets/city/city_meta.gd")
+const COLORS := [Color(0.3, 0.92, 1.0), Color(1.0, 0.3, 0.85), Color(1.0, 0.64, 0.22)]
+const RECALL_COLOR := Color(1.0, 0.22, 0.2)
+const SLOT := 6.0 ## segundos que se muestra cada anuncio
+const SWITCH := 0.45 ## duración del colapso / despliegue al cambiar
+const LIFT := 36.0 ## altura del centro del holograma sobre el cabezal del proyector
+const SPIN := 0.8 ## radianes por segundo
+const TILT := 0.28 ## inclinación hacia la cámara
+const LINE := 0.45 ## grosor de las líneas (px del juego; ~1.3 px en pantalla)
+const CULL := 110.0 ## margen para no dibujar hologramas fuera de cámara
 
-## Letrero de cada producto: [nombre, oferta]
-const PRODUCTS := [
+## Anuncios: [nombre, oferta]; el último es el aviso del gato
+const ADS := [
 	["BRAZO MK-7", "-30%"],
 	["PIERNA X2", "NUEVO"],
 	["MANO PRO", "-50%"],
 	["OJO 8K", "HD"],
 	["COLUMNA NEO", "-20%"],
-	["SUJETO K-7", "DESCARTADO"], # aviso de retiro: el propio gato
+	["SUJETO K-7", "DESCARTADO"],
 ]
-const RECALL := 5 ## índice del aviso del gato (se muestra en rojo)
-const RECALL_COLOR := Color(1.0, 0.22, 0.2)
+const RECALL := 5
 const CAT_SHEET := preload("res://assets/cat/cat_sheet.png")
-const CAT_FRAME := Rect2i(0, 0, 32, 32) ## primer cuadro de reposo
+const CAT_FRAME := Rect2i(0, 0, 32, 32)
 
-## Fuente de 3x5 para los letreros (cada fila son 3 bits)
+## Tipografía vectorial angular (rejilla de 4x6, trazos)
 const FONT := {
-	"A": [7, 5, 7, 5, 5], "B": [6, 5, 6, 5, 6], "C": [7, 4, 4, 4, 7], "D": [6, 5, 5, 5, 6],
-	"E": [7, 4, 6, 4, 7], "H": [5, 5, 7, 5, 5], "I": [7, 2, 2, 2, 7], "J": [1, 1, 1, 5, 7], "K": [5, 5, 6, 5, 5],
-	"L": [4, 4, 4, 4, 7], "M": [5, 7, 5, 5, 5], "N": [6, 5, 5, 5, 5], "O": [7, 5, 5, 5, 7],
-	"P": [7, 5, 7, 4, 4], "R": [7, 5, 6, 5, 5], "S": [7, 4, 7, 1, 7], "T": [7, 2, 2, 2, 2], "U": [5, 5, 5, 5, 7], "V": [5, 5, 5, 5, 2],
-	"X": [5, 5, 2, 5, 5], "Z": [7, 1, 2, 4, 7], "0": [7, 5, 5, 5, 7], "2": [7, 1, 7, 4, 7],
-	"3": [7, 1, 7, 1, 7], "5": [7, 4, 7, 1, 7], "7": [7, 1, 1, 1, 1], "8": [7, 5, 7, 5, 7],
-	"-": [0, 0, 7, 0, 0], "%": [5, 1, 2, 4, 5], " ": [0, 0, 0, 0, 0],
+	"A": [[0, 6, 0, 2, 1, 0, 3, 0, 4, 2, 4, 6], [0, 3.5, 4, 3.5]],
+	"B": [[0, 0, 3, 0, 4, 1, 4, 2, 3, 3, 0, 3], [3, 3, 4, 4, 4, 5, 3, 6, 0, 6, 0, 0]],
+	"C": [[4, 0, 1, 0, 0, 1, 0, 5, 1, 6, 4, 6]],
+	"D": [[0, 0, 3, 0, 4, 1, 4, 5, 3, 6, 0, 6, 0, 0]],
+	"E": [[4, 0, 0, 0, 0, 6, 4, 6], [0, 3, 3, 3]],
+	"H": [[0, 0, 0, 6], [4, 0, 4, 6], [0, 3, 4, 3]],
+	"I": [[1, 0, 3, 0], [2, 0, 2, 6], [1, 6, 3, 6]],
+	"J": [[4, 0, 4, 5, 3, 6, 1, 6, 0, 5]],
+	"K": [[0, 0, 0, 6], [4, 0, 1, 3, 0, 3], [1, 3, 4, 6]],
+	"L": [[0, 0, 0, 6, 4, 6]],
+	"M": [[0, 6, 0, 0, 2, 2.5, 4, 0, 4, 6]],
+	"N": [[0, 6, 0, 0, 4, 6, 4, 0]],
+	"O": [[1, 0, 3, 0, 4, 1, 4, 5, 3, 6, 1, 6, 0, 5, 0, 1, 1, 0]],
+	"P": [[0, 6, 0, 0, 3, 0, 4, 1, 4, 2, 3, 3, 0, 3]],
+	"R": [[0, 6, 0, 0, 3, 0, 4, 1, 4, 2, 3, 3, 0, 3], [2, 3, 4, 6]],
+	"S": [[4, 0, 1, 0, 0, 1, 0, 2, 1, 3, 3, 3, 4, 4, 4, 5, 3, 6, 0, 6]],
+	"T": [[0, 0, 4, 0], [2, 0, 2, 6]],
+	"U": [[0, 0, 0, 5, 1, 6, 3, 6, 4, 5, 4, 0]],
+	"V": [[0, 0, 2, 6, 4, 0]],
+	"X": [[0, 0, 4, 6], [4, 0, 0, 6]],
+	"Z": [[0, 0, 4, 0, 0, 6, 4, 6]],
+	"0": [[1, 0, 3, 0, 4, 1, 4, 5, 3, 6, 1, 6, 0, 5, 0, 1, 1, 0], [3, 1.5, 1, 4.5]],
+	"2": [[0, 1, 1, 0, 3, 0, 4, 1, 4, 2, 0, 6, 4, 6]],
+	"3": [[0, 0, 4, 0, 2, 2.5, 3, 2.5, 4, 3.5, 4, 5, 3, 6, 0, 6]],
+	"5": [[4, 0, 0, 0, 0, 3, 3, 3, 4, 4, 4, 5, 3, 6, 0, 6]],
+	"7": [[0, 0, 4, 0, 1.5, 6]],
+	"8": [[1, 0, 3, 0, 4, 1, 4, 2, 3, 3, 1, 3, 0, 2, 0, 1, 1, 0], [1, 3, 0, 4, 0, 5, 1, 6, 3, 6, 4, 5, 4, 4, 3, 3]],
+	"-": [[1, 3, 3, 3]],
+	"%": [[0, 6, 4, 0], [0, 0, 1, 0, 1, 1, 0, 1, 0, 0], [3, 5, 4, 5, 4, 6, 3, 6, 3, 5]],
 }
+const FONT_SCALE := 0.72
 
-@export var texture: Texture2D ## capa donde están pintados los proyectores
+@export var layer_width := 384.0 ## ancho de la capa en píxeles del juego (lo asigna el nivel)
 
 var _t := 0.0
-var _width := 384.0
-var _spots := [] ## {pos, color, offset}
-var _models := [] ## por producto: PackedVector3Array con pares de puntos (segmentos)
+var _spots := [] ## {pos, offset, dust, rain}
 var _rnd := RandomNumberGenerator.new()
-var _cat_holo: ImageTexture ## silueta del gato con bordes marcados y líneas de barrido
+var _glow_tex: GradientTexture2D
+var _cat_holo: ImageTexture
 
 
 func _ready() -> void:
 	_rnd.seed = 777
-	_models = [_arm(), _leg(), _hand(), _eye(), _spine(), PackedVector3Array()]
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	_glow_tex = GradientTexture2D.new()
+	_glow_tex.gradient = g
+	_glow_tex.fill = GradientTexture2D.FILL_RADIAL
+	_glow_tex.fill_from = Vector2(0.5, 0.5)
+	_glow_tex.fill_to = Vector2(1.0, 0.5)
+	_glow_tex.width = 64
+	_glow_tex.height = 64
 	_cat_holo = _make_cat_hologram()
-	if texture == null:
-		return
-	_width = texture.get_width()
-	var image := texture.get_image()
-	if image.is_compressed():
-		image.decompress()
-	for y in image.get_height():
-		for x in image.get_width():
-			var c := image.get_pixel(x, y)
-			# Solo píxeles opacos: al importar, Godot rellena el color de los
-			# transparentes vecinos con el de sus bordes
-			if c.a > 0.5 and absf(c.r - HOLO_KEY.r) < 0.004 and absf(c.g - HOLO_KEY.g) < 0.004 and absf(c.b - HOLO_KEY.b) < 0.004:
-				var i := _spots.size()
-				# Cada holograma empieza en otro producto y cambia a destiempo
-				_spots.append({pos = Vector2(x + 0.5, y), color = COLORS[i % COLORS.size()],
-						offset = i * 2.0 + i * SLOT})
+	for i in META.PROJECTORS.size():
+		var p: Array = META.PROJECTORS[i]
+		var dust := []
+		for k in 22:
+			dust.append(Vector3(_rnd.randf_range(-1, 1), _rnd.randf(), _rnd.randf() * TAU))
+		var rain := []
+		for k in 14:
+			rain.append(Vector2(_rnd.randf_range(-16, 16), _rnd.randf()))
+		# Cada proyector empieza en otro anuncio y cambia a destiempo
+		_spots.append({pos = Vector2(p[0], p[1]), offset = i * (SLOT * 1.5 + 1.3), dust = dust, rain = rain})
 
 
 func _process(delta: float) -> void:
@@ -80,247 +109,396 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
-	for copy in [-_width, 0.0, _width]:
+	var cam := get_viewport().get_camera_2d()
+	var cam_x := cam.get_screen_center_position().x if cam else 0.0
+	for copy in [-layer_width, 0.0, layer_width]:
 		for spot in _spots:
-			_draw_hologram(spot, Vector2(copy, 0))
+			var shift := Vector2(copy, 0)
+			if absf(to_global(spot.pos + shift).x - cam_x) > 192.0 + CULL:
+				continue
+			_draw_hologram(spot, shift)
 
 
 func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:
 	var time: float = _t + spot.offset
-	var index := int(time / SLOT) % _models.size()
+	var index := int(time / SLOT) % ADS.size()
 	var local := fmod(time, SLOT)
-	# Al cambiar de producto se aplasta en vertical y vuelve a desplegarse
 	var unfold := clampf(minf(local, SLOT - local) / SWITCH, 0.0, 1.0)
 	unfold = unfold * unfold * (3.0 - 2.0 * unfold)
-	var col: Color = RECALL_COLOR if index == RECALL else spot.color
-	# Parpadeo leve y fallos ocasionales de la proyección
-	var flicker := 0.85 + 0.15 * sin(time * 31.0) * sin(time * 7.3)
-	var glitch := fmod(time * 0.37 + spot.offset, 3.0) < 0.08
-	var base: Vector2 = spot.pos + shift
-	var center := base + Vector2(0, -LIFT)
-	if glitch:
-		center.x += 2.0 if int(time * 60.0) % 2 == 0 else -2.0
-		flicker *= 0.55
+	var col: Color = RECALL_COLOR if index == RECALL else COLORS[index % COLORS.size()]
 
-	# Haz del proyector: cono translúcido hasta la base del holograma
-	var top_y := center.y + 18.0
-	draw_polygon(PackedVector2Array([base, Vector2(center.x - 13, top_y), Vector2(center.x + 13, top_y)]),
-			PackedColorArray([Color(col, 0.28 * flicker), Color(col, 0.02), Color(col, 0.02)]))
-	draw_rect(Rect2(base - Vector2(1, 1), Vector2(2, 2)), Color(col, 0.9))
-	# Anillo base
-	var ring := PackedVector2Array()
-	for i in 17:
-		var a := i / 16.0 * TAU
-		ring.append(Vector2(center.x + cos(a) * 13.0, top_y + sin(a) * 2.5))
-	draw_polyline(ring, Color(col, 0.45 * flicker), -1.0)
+	# Tubo fluorescente defectuoso: parpadeos cortos a ráfagas y, a veces, un
+	# salto de imagen que deja una copia desplazada un instante
+	var flicker := 0.9 + 0.1 * sin(time * 43.0)
+	var burst := fmod(time * 0.31 + spot.offset * 0.7, 4.0)
+	if burst < 0.25 and int(time * 30.0) % 3 == 0:
+		flicker *= 0.25
+	var jump := fmod(time * 0.23 + spot.offset, 5.0) < 0.06
+
+	var head: Vector2 = spot.pos + shift
+	var center := head + Vector2(0, -LIFT)
+	var beam_top := center.y + 20.0
+
+	# Luz difusa del holograma sobre las nubes y los edificios cercanos
+	var spill := 62.0
+	draw_texture_rect(_glow_tex, Rect2(center - Vector2(spill, spill), Vector2(spill, spill) * 2), false,
+			Color(col, 0.16 * flicker * (0.4 + 0.6 * unfold)))
+
+	_draw_beam(spot, head, center, beam_top, col, flicker, time)
 
 	if index == RECALL:
 		_draw_recall(center, time, unfold, flicker, col)
-	# Modelo en alambre: gira en Y, inclinado hacia la cámara; lo de atrás
-	# se ve más tenue
-	var model: PackedVector3Array = _models[index]
+	else:
+		var trail := 5 if Engine.time_scale < 1.0 else 0
+		# Con la Q: estela de poses anteriores (motion blur de luz)
+		for k in range(trail, 0, -1):
+			_draw_model(index, center, time - k * 0.05, unfold, Color(col, 0.22 * (1.0 - k / 6.0)), true)
+		_draw_model(index, center, time, unfold, Color(col, flicker), false)
+		if jump:
+			_draw_model(index, center + Vector2(3, -1), time, unfold, Color(col, 0.35), true)
+
+	# Colapso: una sola línea de luz brillante y ráfaga de estática
+	if unfold < 0.98:
+		var w := 22.0 * (1.0 - unfold * 0.6)
+		draw_line(center + Vector2(-w, 0), center + Vector2(w, 0), Color(col.lightened(0.5), 0.95 * (1.0 - unfold)), 0.8, true)
+		draw_line(center + Vector2(-w, 0), center + Vector2(w, 0), Color(col, 0.3 * (1.0 - unfold)), 2.5, true)
+		for i in 10:
+			var y := center.y + _rnd.randf_range(-22, 22) * (1.0 - unfold * 0.5)
+			var x := center.x + _rnd.randf_range(-20, 12)
+			draw_line(Vector2(x, y), Vector2(x + _rnd.randf_range(3, 14), y), Color(col, 0.5 * (1.0 - unfold)), 0.3, true)
+		for i in 24:
+			var p := center + Vector2(_rnd.randf_range(-20, 20), _rnd.randf_range(-22, 22))
+			draw_rect(Rect2(p, Vector2(0.4, 0.4)), Color(col.lightened(0.3), 0.8 * (1.0 - unfold)))
+
+	_draw_label(ADS[index], center + Vector2(22, -20), col, unfold * flicker, time, index == RECALL)
+
+
+func _draw_beam(spot: Dictionary, head: Vector2, center: Vector2, top_y: float, col: Color, flicker: float, time: float) -> void:
+	var half := 14.0
+	# Cono translúcido con un núcleo más brillante
+	draw_polygon(PackedVector2Array([head, Vector2(center.x - half, top_y), Vector2(center.x + half, top_y)]),
+			PackedColorArray([Color(col, 0.3 * flicker), Color(col, 0.03), Color(col, 0.03)]))
+	draw_polygon(PackedVector2Array([head, Vector2(center.x - half * 0.35, top_y), Vector2(center.x + half * 0.35, top_y)]),
+			PackedColorArray([Color(col, 0.22 * flicker), Color(col, 0.0), Color(col, 0.0)]))
+	var height := head.y - top_y
+	# Partículas de polvo que flotan dentro del haz
+	for d in spot.dust:
+		var v := fmod(d.y + time * 0.08, 1.0)
+		var y := head.y - v * height
+		var x: float = center.x + d.x * half * v * 0.9 + sin(time + d.z) * 0.6
+		var twinkle := 0.5 + 0.5 * sin(time * 3.0 + d.z * 5.0)
+		draw_rect(Rect2(x, y, 0.35, 0.35), Color(col.lightened(0.6), 0.55 * twinkle * (1.0 - v * 0.5)))
+	# Gotas de lluvia que brillan al atravesar la luz
+	for r in spot.rain:
+		var v := fmod(r.y + time * 1.4, 1.0)
+		var y := top_y - 10.0 + v * (height + 20.0)
+		var x: float = center.x + r.x - v * 3.0
+		var inside := clampf(1.0 - absf(x - center.x) / maxf(1.0, half * (head.y - y) / height), 0.0, 1.0)
+		if inside > 0.0 and y < head.y:
+			draw_line(Vector2(x, y), Vector2(x - 0.5, y + 2.2), Color(col.lightened(0.7), 0.7 * inside), 0.3, true)
+	# Anillo LED continuo en la base, con luz difusa
+	var ring := PackedVector2Array()
+	for i in 25:
+		var a := i / 24.0 * TAU
+		ring.append(head + Vector2(cos(a) * 5.0, sin(a) * 1.3 + 0.6))
+	draw_polyline(ring, Color(col, 0.18 * flicker), 2.2, true)
+	draw_polyline(ring, Color(col.lightened(0.4), 0.9 * flicker), 0.45, true)
+
+
+# --- modelos ---------------------------------------------------------------------
+
+func _draw_model(index: int, center: Vector2, time: float, unfold: float, col: Color, ghost: bool) -> void:
+	var m := PackedVector3Array()
+	var dots := PackedVector3Array() ## pulsos de luz
+	match index:
+		0: _arm(m, time)
+		1: _leg(m, time)
+		2: _hand(m, time)
+		3: _eye(m, time)
+		4: _spine(m, dots, time)
 	var ay := time * SPIN
 	var cy := cos(ay)
 	var sy := sin(ay)
 	var ct := cos(TILT)
 	var st := sin(TILT)
-	for i in range(0, model.size(), 2):
-		var pts := []
-		var depth := 0.0
-		for p in [model[i], model[i + 1]]:
-			var x: float = p.x * cy + p.z * sy
-			var z: float = -p.x * sy + p.z * cy
-			var y: float = p.y * ct - z * st
-			z = p.y * st + z * ct
-			depth += z
-			pts.append(center + Vector2(x, y * unfold))
-		var near := clampf(0.5 + depth / 40.0, 0.25, 1.0)
-		draw_line(pts[0], pts[1], Color(col, 0.85 * near * flicker), -1.0)
+	var front := PackedVector2Array()
+	var back := PackedVector2Array()
+	for i in range(0, m.size(), 2):
+		var a := _project(m[i], cy, sy, ct, st)
+		var b := _project(m[i + 1], cy, sy, ct, st)
+		var pa := center + Vector2(a.x, a.y * unfold)
+		var pb := center + Vector2(b.x, b.y * unfold)
+		if a.z + b.z >= 0.0:
+			front.append(pa)
+			front.append(pb)
+		else:
+			back.append(pa)
+			back.append(pb)
+	if ghost:
+		if front.size():
+			draw_multiline(front, col, 1.2, true)
+		return
+	# Cara trasera: 50 % de opacidad y un tono más oscuro
+	if back.size():
+		draw_multiline(back, Color(col.darkened(0.35), col.a * 0.5), LINE, true)
+	if front.size():
+		draw_multiline(front, Color(col, col.a * 0.2), LINE * 3.5, true) # halo
+		draw_multiline(front, Color(col.lightened(0.15), col.a * 0.95), LINE, true)
+	for d in dots:
+		var p := _project(d, cy, sy, ct, st)
+		draw_circle(center + Vector2(p.x, p.y * unfold), 0.7, Color(1, 1, 1, col.a), true, -1.0, true)
+		draw_circle(center + Vector2(p.x, p.y * unfold), 1.6, Color(col, col.a * 0.35), true, -1.0, true)
 
-	# Estática mientras cambia de producto
-	if unfold < 0.95:
-		for i in 14:
-			var p := center + Vector2(_rnd.randf_range(-16, 16), _rnd.randf_range(-20, 20) * (1.0 - unfold))
-			draw_rect(Rect2(p.floor(), Vector2.ONE), Color(col, 0.7 * (1.0 - unfold)))
 
-	# Letrero: nombre del producto y oferta que parpadea
-	var label: Array = PRODUCTS[index]
-	var text_a := Color(col, 0.9 * unfold * flicker)
-	_draw_text(label[0], center + Vector2(0, -30), text_a)
-	if int(time * 2.0) % 2 == 0:
-		var offer_color := Color(1.0, 0.92, 0.4) if index != RECALL else Color(1.0, 0.85, 0.85)
-		_draw_text(label[1], center + Vector2(0, -24), Color(offer_color, unfold * flicker))
+func _project(p: Vector3, cy: float, sy: float, ct: float, st: float) -> Vector3:
+	var x := p.x * cy + p.z * sy
+	var z := -p.x * sy + p.z * cy
+	var y := p.y * ct - z * st
+	z = p.y * st + z * ct
+	return Vector3(x, y, z)
 
 
-# Aviso de retiro: el gato del juego gira como una tarjeta holográfica roja,
-# tachado por una franja de "descartado"
+func _box(m: PackedVector3Array, c: Vector3, s: Vector3, basis := Basis()) -> void:
+	var h := s / 2.0
+	var k := []
+	for i in 8:
+		k.append(c + basis * Vector3(h.x * (1 if i & 1 else -1), h.y * (1 if i & 2 else -1), h.z * (1 if i & 4 else -1)))
+	for e in [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]:
+		m.append(k[e[0]])
+		m.append(k[e[1]])
+
+
+func _ring(m: PackedVector3Array, c: Vector3, r: float, axis: Vector3, n := 12, turn := 0.0) -> void:
+	var u := axis.cross(Vector3.UP if absf(axis.y) < 0.9 else Vector3.RIGHT).normalized()
+	var v := axis.cross(u).normalized()
+	for i in n:
+		var a := turn + i / float(n) * TAU
+		var b := turn + (i + 1) / float(n) * TAU
+		m.append(c + (u * cos(a) + v * sin(a)) * r)
+		m.append(c + (u * cos(b) + v * sin(b)) * r)
+
+
+func _cyl(m: PackedVector3Array, a: Vector3, b: Vector3, r: float, n := 10) -> void:
+	var axis := (b - a).normalized()
+	_ring(m, a, r, axis, n)
+	_ring(m, b, r, axis, n)
+	var u := axis.cross(Vector3.UP if absf(axis.y) < 0.9 else Vector3.RIGHT).normalized()
+	var v := axis.cross(u).normalized()
+	for i in 6:
+		var ang := i / 6.0 * TAU
+		var o := (u * cos(ang) + v * sin(ang)) * r
+		m.append(a + o)
+		m.append(b + o)
+
+
+func _seg(m: PackedVector3Array, a: Vector3, b: Vector3) -> void:
+	m.append(a)
+	m.append(b)
+
+
+func _finger(m: PackedVector3Array, base: Vector3, lengths: Array, curl: float, dir := Vector3.DOWN * -1.0) -> void:
+	# Dedo articulado: cada falange se dobla 'curl' radianes hacia la palma
+	var p := base
+	var d := dir.normalized()
+	var angle := 0.0
+	for L in lengths:
+		angle += curl
+		var step: Vector3 = Basis(Vector3.RIGHT, angle) * d * L
+		_seg(m, p, p + step)
+		_box(m, p, Vector3(1.0, 1.0, 1.0))          # nudillo
+		p += step
+
+
+func _arm(m: PackedVector3Array, t: float) -> void:
+	var elbow := -0.35 - 0.35 * (0.5 + 0.5 * sin(t * 1.3))
+	_cyl(m, Vector3(-5, -18, 0), Vector3(5, -18, 0), 5)                 # hombro
+	_box(m, Vector3(0, -8, 0), Vector3(7, 13, 7))                        # brazo
+	var fore := Basis(Vector3.RIGHT, elbow)
+	var pivot := Vector3(0, 1, 0)
+	# Pistón hidráulico: camisa fija y vástago de cromo que se desliza
+	var sleeve_a := Vector3(0, -14, 5)
+	var rod_end := pivot + fore * Vector3(0, 6, 4)
+	var mid := sleeve_a.lerp(rod_end, 0.5)
+	_cyl(m, sleeve_a, mid, 1.1, 6)
+	_seg(m, mid, rod_end)
+	_cyl(m, Vector3(-4, 1, 0), Vector3(4, 1, 0), 3.5)                   # codo
+	_box(m, pivot + fore * Vector3(0, 7, 0), Vector3(5, 12, 5), fore)    # antebrazo
+	var wrist := pivot + fore * Vector3(0, 14, 0)
+	_box(m, wrist + fore * Vector3(0, 2, 0), Vector3(7, 4, 3), fore)     # palma
+	for i in 4:                                                          # nudillos individuales
+		var curl := 0.2 + 0.35 * (0.5 + 0.5 * sin(t * 2.2 + i * 0.8))
+		var base := wrist + fore * Vector3(-2.7 + i * 1.8, 4.5, 0)
+		_finger(m, base, [2.2, 1.8, 1.4], curl, fore * Vector3.DOWN * -1.0)
+
+
+func _leg(m: PackedVector3Array, t: float) -> void:
+	var squash := 0.5 + 0.5 * sin(t * 2.0)                               # amortiguación
+	_cyl(m, Vector3(-5, -20, 0), Vector3(5, -20, 0), 4)                 # cadera
+	_box(m, Vector3(0, -10, 0), Vector3(8, 16, 8))                       # muslo
+	_cyl(m, Vector3(-4, 0, 0), Vector3(4, 0, 0), 3.5)                   # rodilla
+	var shin_top := 3.0
+	var ankle := 16.0 - squash * 2.0
+	_box(m, Vector3(0, (shin_top + ankle) / 2, -1), Vector3(4.5, ankle - shin_top, 4.5))
+	# Muelle helicoidal alrededor de la canilla que se comprime
+	var turns := 6
+	var prev := Vector3.ZERO
+	for i in turns * 10 + 1:
+		var k := i / float(turns * 10)
+		var a := k * turns * TAU
+		var p := Vector3(cos(a) * 3.8, shin_top + 1 + k * (ankle - shin_top - 2), -1 + sin(a) * 3.8)
+		if i > 0:
+			_seg(m, prev, p)
+		prev = p
+	# Pistones del talón
+	_cyl(m, Vector3(0, ankle - 5, -5), Vector3(0, ankle - 1, -5), 1.0, 6)
+	_seg(m, Vector3(0, ankle - 1, -5), Vector3(0, ankle + 3, -4))
+	_ring(m, Vector3(0, ankle + 1, -1), 2.5, Vector3.RIGHT, 10)          # tobillo
+	_box(m, Vector3(0, ankle + 4, 3), Vector3(6, 3, 12))                 # pie
+	for x in [-2.0, 0.0, 2.0]:
+		_seg(m, Vector3(x, ankle + 5, 9), Vector3(x, ankle + 5.5, 11))   # dedos
+
+
+func _hand(m: PackedVector3Array, t: float) -> void:
+	var grip := 0.5 + 0.5 * sin(t * 1.4)                                 # abre y cierra
+	_box(m, Vector3(0, 3, 0), Vector3(11, 11, 3))                        # palma
+	# Micro-servomotores visibles en la palma
+	for sx in [-3.0, 0.0, 3.0]:
+		_cyl(m, Vector3(sx, 2, 1.6), Vector3(sx, 2, 2.6), 1.1, 8)
+		_seg(m, Vector3(sx, 2, 2.6), Vector3(sx, -2.5, 1.6))
+	_cyl(m, Vector3(0, 9, 0), Vector3(0, 16, 0), 3.5, 10)                # muñeca
+	for i in 4:
+		var x := -4.2 + i * 2.8
+		var L := [4.0, 3.2, 2.4] if i in [1, 2] else [3.4, 2.8, 2.0]
+		_finger(m, Vector3(x, -2.5, 0), L, 0.1 + grip * 0.55)
+	_finger(m, Vector3(5.5, 4, 0.5), [3.0, 2.5], 0.2 + grip * 0.5, Vector3(1, -1, 0.3))
+
+
+func _eye(m: PackedVector3Array, t: float) -> void:
+	var r := 13.0
+	for lat in [-0.8, -0.4, 0.0, 0.4, 0.8]:
+		_ring(m, Vector3(0, r * sin(lat), 0), r * cos(lat), Vector3.UP, 18)
+	for lon in 6:
+		_ring(m, Vector3.ZERO, r, Vector3(cos(lon * PI / 6.0), 0, sin(lon * PI / 6.0)), 18)
+	# Iris mecánico: capas de anillos con muescas que giran en sentidos opuestos
+	var front := Vector3(0, 0, r)
+	for layer in 3:
+		var rr := 6.0 - layer * 1.7
+		var z := r * 0.92 + layer * 0.35
+		var turn := t * (1.6 if layer % 2 == 0 else -2.2)
+		_ring(m, Vector3(0, 0, z), rr, Vector3.BACK, 16, turn)
+		for k in 6:
+			var a := turn + k * TAU / 6.0
+			_seg(m, Vector3(cos(a) * rr, sin(a) * rr, z), Vector3(cos(a) * (rr - 1.0), sin(a) * (rr - 1.0), z))
+	# Retícula de escaneo que recorre el frente
+	var scan := sin(t * 1.7) * 3.0
+	_seg(m, front + Vector3(-5, scan, 1), front + Vector3(5, scan, 1))
+	_seg(m, front + Vector3(0, -5, 1), front + Vector3(0, 5, 1))
+	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var corner := front + Vector3(c.x * 4, c.y * 4, 1)
+		_seg(m, corner, corner - Vector3(c.x * 1.5, 0, 0))
+		_seg(m, corner, corner - Vector3(0, c.y * 1.5, 0))
+	# Nervio óptico cableado
+	_seg(m, Vector3(0, 0, -r), Vector3(1, 7, -r - 5))
+	_seg(m, Vector3(1, 7, -r - 5), Vector3(0, 19, -r - 6))
+
+
+func _spine(m: PackedVector3Array, dots: PackedVector3Array, t: float) -> void:
+	var n := 8
+	var fibers := [[], []]
+	for i in n:
+		var y := -19.0 + i * 5.3
+		var z := sin(i / float(n - 1) * PI) * 3.0                          # curva en S suave
+		_box(m, Vector3(0, y, z), Vector3(8, 3, 6))                        # vértebra
+		_seg(m, Vector3(0, y, z - 3), Vector3(0, y + 1.2, z - 7))          # apófisis
+		_seg(m, Vector3(-4, y, z), Vector3(-6.5, y + 0.8, z - 1))          # transversas
+		_seg(m, Vector3(4, y, z), Vector3(6.5, y + 0.8, z - 1))
+		fibers[0].append(Vector3(2.5, y, z + 3))
+		fibers[1].append(Vector3(-2.5, y, z + 3))
+	for f in fibers:
+		for i in f.size() - 1:
+			_seg(m, f[i], f[i + 1])
+	# Pulsos de luz que viajan por los filamentos
+	for f in fibers.size():
+		for k in 2:
+			var pos := fmod(t * 0.7 + k * 0.5 + f * 0.25, 1.0) * (n - 1)
+			var i := int(pos)
+			var a: Vector3 = fibers[f][i]
+			var b: Vector3 = fibers[f][mini(i + 1, n - 1)]
+			dots.append(a.lerp(b, pos - i))
+
+
+# --- aviso de retiro del gato ------------------------------------------------------
+
 func _draw_recall(center: Vector2, time: float, unfold: float, flicker: float, col: Color) -> void:
 	var turn := cos(time * SPIN * 1.3)
 	var sx := signf(turn) * maxf(absf(turn), 0.08)
-	draw_set_transform(center + Vector2(0, -2), 0.0, Vector2(sx, unfold))
-	draw_texture(_cat_holo, Vector2(-16, -16), Color(col, 0.95 * flicker))
+	draw_set_transform(center + Vector2(0, -2), 0.0, Vector2(sx, unfold) / 3.0)
+	draw_texture(_cat_holo, Vector2(-48, -48), Color(col, 0.95 * flicker))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
-	# Franja diagonal que parpadea sobre el gato
 	if int(time * 3.0) % 3 != 0:
 		var h := 10.0 * unfold
-		draw_line(center + Vector2(-13, h), center + Vector2(13, -h), Color(col, 0.9 * flicker), -1.0)
-		draw_line(center + Vector2(-13, h + 1), center + Vector2(13, -h + 1), Color(col, 0.5 * flicker), -1.0)
+		draw_line(center + Vector2(-13, h), center + Vector2(13, -h), Color(col, 0.9 * flicker), 0.6, true)
+		draw_line(center + Vector2(-13, h), center + Vector2(13, -h), Color(col, 0.25 * flicker), 2.0, true)
 
 
 func _make_cat_hologram() -> ImageTexture:
+	# Silueta del gato con bordes marcados, ampliada x3 (para que se vea nítida
+	# con el filtrado suave del fondo) y con líneas de barrido
 	var src := CAT_SHEET.get_image()
 	if src.is_compressed():
 		src.decompress()
 	src = src.get_region(CAT_FRAME)
-	var img := Image.create(CAT_FRAME.size.x, CAT_FRAME.size.y, false, Image.FORMAT_RGBA8)
-	for y in img.get_height():
-		for x in img.get_width():
+	var img := Image.create(CAT_FRAME.size.x * 3, CAT_FRAME.size.y * 3, false, Image.FORMAT_RGBA8)
+	for y in CAT_FRAME.size.y:
+		for x in CAT_FRAME.size.x:
 			if src.get_pixel(x, y).a < 0.5:
 				continue
-			# Bordes y detalles claros bien marcados, el relleno tenue, y una
-			# línea de barrido cada dos filas
 			var edge := false
 			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 				var n: Vector2i = Vector2i(x, y) + d
-				if n.x < 0 or n.y < 0 or n.x >= img.get_width() or n.y >= img.get_height() or src.get_pixelv(n).a < 0.5:
+				if n.x < 0 or n.y < 0 or n.x >= CAT_FRAME.size.x or n.y >= CAT_FRAME.size.y or src.get_pixelv(n).a < 0.5:
 					edge = true
-			var lum := src.get_pixel(x, y).get_luminance()
-			var a := 1.0 if edge else clampf(0.3 + lum * 1.5, 0.3, 1.0)
-			if y % 2 == 1:
-				a *= 0.55
-			img.set_pixel(x, y, Color(1, 1, 1, a))
+			var a := 1.0 if edge else clampf(0.3 + src.get_pixel(x, y).get_luminance() * 1.5, 0.3, 1.0)
+			for sy in 3:
+				for sx in 3:
+					img.set_pixel(x * 3 + sx, y * 3 + sy, Color(1, 1, 1, a * (0.5 if sy == 2 else 1.0)))
 	return ImageTexture.create_from_image(img)
 
 
+# --- letreros ------------------------------------------------------------------------
+
+func _draw_label(ad: Array, at: Vector2, col: Color, alpha: float, time: float, recall: bool) -> void:
+	if alpha <= 0.01:
+		return
+	var name_w := _text_width(ad[0])
+	# Marco de interfaz: esquinas y una línea guía hacia el holograma
+	var box := Rect2(at + Vector2(-2, -2), Vector2(name_w + 4, 11))
+	var c := Color(col, 0.6 * alpha)
+	for corner in [box.position, Vector2(box.end.x, box.position.y), box.end, Vector2(box.position.x, box.end.y)]:
+		var sx := 1.0 if corner.x == box.position.x else -1.0
+		var sy := 1.0 if corner.y == box.position.y else -1.0
+		draw_line(corner, corner + Vector2(sx * 2.5, 0), c, 0.35, true)
+		draw_line(corner, corner + Vector2(0, sy * 2.5), c, 0.35, true)
+	draw_line(box.position + Vector2(0, 6), box.position + Vector2(-8, 12), Color(col, 0.35 * alpha), 0.3, true)
+	_draw_text(ad[0], at, Color(col.lightened(0.2), alpha))
+	if int(time * 2.0) % 2 == 0:
+		var offer := Color(1.0, 0.9, 0.9) if recall else Color(1.0, 0.92, 0.45)
+		_draw_text(ad[1], at + Vector2(0, 5.5), Color(offer, alpha))
+
+
+func _text_width(text: String) -> float:
+	return text.length() * 5.2 * FONT_SCALE - 1.2 * FONT_SCALE
+
+
 func _draw_text(text: String, at: Vector2, color: Color) -> void:
-	var x := roundf(at.x - (text.length() * 4 - 1) / 2.0)
-	var y := roundf(at.y)
+	var lines := PackedVector2Array()
+	var x := at.x
 	for ch in text:
-		var rows: Array = FONT.get(ch, FONT[" "])
-		for r in 5:
-			for b in 3:
-				if rows[r] >> (2 - b) & 1:
-					draw_rect(Rect2(x + b, y + r, 1, 1), color)
-		x += 4
-
-
-# --- modelos 3D (segmentos; y crece hacia abajo, ~40 px de alto) --------------
-
-func _box(out: PackedVector3Array, c: Vector3, s: Vector3, basis := Basis()) -> void:
-	var h := s / 2.0
-	var corners := []
-	for i in 8:
-		var v := Vector3(h.x * (1 if i & 1 else -1), h.y * (1 if i & 2 else -1), h.z * (1 if i & 4 else -1))
-		corners.append(c + basis * v)
-	for e in [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]:
-		out.append(corners[e[0]])
-		out.append(corners[e[1]])
-
-
-func _ring(out: PackedVector3Array, c: Vector3, r: float, axis: Vector3, n := 10) -> void:
-	# Círculo perpendicular al eje dado
-	var u := axis.cross(Vector3.UP if absf(axis.y) < 0.9 else Vector3.RIGHT).normalized()
-	var v := axis.cross(u).normalized()
-	for i in n:
-		var a := i / float(n) * TAU
-		var b := (i + 1) / float(n) * TAU
-		out.append(c + (u * cos(a) + v * sin(a)) * r)
-		out.append(c + (u * cos(b) + v * sin(b)) * r)
-
-
-func _cyl(out: PackedVector3Array, a: Vector3, b: Vector3, r: float, n := 8) -> void:
-	var axis := (b - a).normalized()
-	_ring(out, a, r, axis, n)
-	_ring(out, b, r, axis, n)
-	var u := axis.cross(Vector3.UP if absf(axis.y) < 0.9 else Vector3.RIGHT).normalized()
-	var v := axis.cross(u).normalized()
-	for i in 4:
-		var ang := i / 4.0 * TAU
-		var o := (u * cos(ang) + v * sin(ang)) * r
-		out.append(a + o)
-		out.append(b + o)
-
-
-func _seg(out: PackedVector3Array, a: Vector3, b: Vector3) -> void:
-	out.append(a)
-	out.append(b)
-
-
-func _arm() -> PackedVector3Array:
-	var m := PackedVector3Array()
-	_cyl(m, Vector3(-5, -17, 0), Vector3(5, -17, 0), 5)             # hombro
-	_box(m, Vector3(0, -7, 0), Vector3(7, 12, 7))                     # brazo
-	_seg(m, Vector3(5, -13, 2), Vector3(5, -1, 2))                    # pistón
-	_cyl(m, Vector3(-4, 1, 0), Vector3(4, 1, 0), 3.5)                 # codo
-	var fore := Basis(Vector3.RIGHT, -0.5)
-	_box(m, Vector3(0, 8, 3.5), Vector3(5, 12, 5), fore)             # antebrazo
-	_box(m, Vector3(0, 16, 8), Vector3(7, 5, 3), fore)               # palma
-	for fx in [-2.5, 0.0, 2.5]:
-		_seg(m, Vector3(fx, 18, 10), Vector3(fx, 22, 13))             # dedos
-	return m
-
-
-func _leg() -> PackedVector3Array:
-	var m := PackedVector3Array()
-	_cyl(m, Vector3(-5, -19, 0), Vector3(5, -19, 0), 4)              # cadera
-	_box(m, Vector3(0, -9, 0), Vector3(8, 16, 8))                     # muslo
-	_cyl(m, Vector3(-4, 1, 0), Vector3(4, 1, 0), 3.5)                 # rodilla
-	_box(m, Vector3(0, 10, -1), Vector3(5, 14, 5))                    # canilla
-	_seg(m, Vector3(-3, 3, -4), Vector3(-3, 15, -4))                  # pistón
-	_seg(m, Vector3(3, 3, -4), Vector3(3, 15, -4))
-	_ring(m, Vector3(0, 18, -1), 2.5, Vector3.RIGHT, 8)               # tobillo
-	_box(m, Vector3(0, 21, 3), Vector3(6, 3, 12))                     # pie
-	return m
-
-
-func _hand() -> PackedVector3Array:
-	var m := PackedVector3Array()
-	_box(m, Vector3(0, 4, 0), Vector3(11, 11, 3))                     # palma
-	_cyl(m, Vector3(0, 10, 0), Vector3(0, 17, 0), 3.5, 8)             # muñeca
-	for i in 4:
-		var x := -4.0 + i * 2.7
-		var spread := (i - 1.5) * 1.2
-		var h := 15.0 if i in [1, 2] else 12.0
-		var knuckle := Vector3(x, -2, 0)
-		var mid := Vector3(x + spread * 0.5, -2 - h * 0.55, 0.5)
-		var tip := Vector3(x + spread, -2 - h, 2.0)
-		_seg(m, knuckle, mid)
-		_seg(m, mid, tip)
-		_box(m, mid, Vector3(1.5, 1.5, 1.5))                          # articulaciones
-	_seg(m, Vector3(5.5, 5, 0), Vector3(10, 0, 1.5))                  # pulgar
-	_box(m, Vector3(10, 0, 1.5), Vector3(1.5, 1.5, 1.5))
-	_seg(m, Vector3(10, 0, 1.5), Vector3(12, -5, 3))
-	return m
-
-
-func _eye() -> PackedVector3Array:
-	var m := PackedVector3Array()
-	var r := 13.0
-	for lat in [-0.5, 0.0, 0.5]:
-		_ring(m, Vector3(0, r * sin(lat), 0), r * cos(lat), Vector3.UP, 14)
-	for lon in 4:
-		var axis := Vector3(cos(lon * PI / 4.0), 0, sin(lon * PI / 4.0))
-		_ring(m, Vector3.ZERO, r, axis, 14)
-	# Iris, pupila y retícula al frente
-	_ring(m, Vector3(0, 0, r * 0.93), 5.0, Vector3.BACK, 12)
-	_ring(m, Vector3(0, 0, r * 0.98), 2.0, Vector3.BACK, 8)
-	_seg(m, Vector3(-4, 0, r + 1), Vector3(4, 0, r + 1))
-	_seg(m, Vector3(0, -4, r + 1), Vector3(0, 4, r + 1))
-	# Nervio óptico cableado
-	_seg(m, Vector3(0, 0, -r), Vector3(0, 6, -r - 6))
-	_seg(m, Vector3(0, 6, -r - 6), Vector3(0, 18, -r - 7))
-	return m
-
-
-func _spine() -> PackedVector3Array:
-	var m := PackedVector3Array()
-	for i in 8:
-		var y := -19.0 + i * 5.2
-		var z := sin(i / 7.0 * PI) * 3.0                               # curva en S suave
-		_box(m, Vector3(0, y, z), Vector3(8, 3, 6))                   # vértebra
-		_seg(m, Vector3(0, y, z - 3), Vector3(0, y + 1, z - 7))       # apófisis
-		if i < 7:
-			var zn := sin((i + 1) / 7.0 * PI) * 3.0
-			_seg(m, Vector3(3, y + 1.5, z + 3), Vector3(3, y + 3.7, zn + 3))    # fibra óptica
-			_seg(m, Vector3(-3, y + 1.5, z + 3), Vector3(-3, y + 3.7, zn + 3))
-	return m
+		for stroke in FONT.get(ch, []):
+			for i in range(0, stroke.size() - 2, 2):
+				lines.append(Vector2(x + stroke[i] * FONT_SCALE, at.y + stroke[i + 1] * FONT_SCALE * 0.75))
+				lines.append(Vector2(x + stroke[i + 2] * FONT_SCALE, at.y + stroke[i + 3] * FONT_SCALE * 0.75))
+		x += 5.2 * FONT_SCALE
+	if lines.size():
+		draw_multiline(lines, Color(color, color.a * 0.25), 1.1, true)   # resplandor
+		draw_multiline(lines, color, 0.32, true)

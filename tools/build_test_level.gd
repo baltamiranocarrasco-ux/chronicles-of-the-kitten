@@ -24,20 +24,23 @@ const CRUSHER_PERIOD := 1.0
 
 const CITY_LIFE := preload("res://effects/city_life.gd")
 const HOLOGRAM_ADS := preload("res://effects/hologram_ads.gd")
-const HOLOGRAMS := 3
+const HOLOGRAMS := 10
 const BG_MATERIAL := preload("res://effects/bg_material.tres")
 const BG_FX_MATERIAL := preload("res://effects/bg_fx_material.tres")
 
 # [nombre, textura, velocidad parallax, elementos animados [tipo, delante_de_la_capa]]
-# Tipos de effects/city_life.gd: 0 ventanas, 1 drones, 2 tráfico;
-# 3 = hologramas publicitarios (effects/hologram_ads.gd)
+# Tipos de effects/city_life.gd: 0 ventanas, 1 drones, 2 tráfico, 3 humo, 4 lluvia;
+# HOLOGRAMS = hologramas publicitarios (effects/hologram_ads.gd)
 const PARALLAX_LAYERS := [
 	["Sky", "res://assets/city/bg_0_sky.png", 0.0, []],
 	["FarCity", "res://assets/city/bg_1_far.png", 0.1, []],
 	["TowerCity", "res://assets/city/bg_2_midfar.png", 0.22, [[0, true]]],
-	["MidCity", "res://assets/city/bg_3_mid.png", 0.4, [[1, false], [3, true]]],
-	["NearCity", "res://assets/city/bg_4_near.png", 0.65, [[2, false]]],
+	["MidCity", "res://assets/city/bg_3_mid.png", 0.4, [[1, false], [3, true], [HOLOGRAMS, true]]],
+	["NearCity", "res://assets/city/bg_4_near.png", 0.65, [[2, false], [4, true]]],
 ]
+## El fondo está dibujado con el triple de detalle que el pixel art del juego
+## (ver tools/generate_city.py) y se muestra a escala 1/3 con filtrado suave
+const BG_DETAIL := 3.0
 
 # [desde, hasta, fila superior] (filas negativas = más alto; 0 = suelo normal)
 const GROUND_STEPS := [
@@ -246,10 +249,12 @@ func build_background(level: Node) -> void:
 	for l in PARALLAX_LAYERS:
 		var p := Parallax2D.new()
 		p.scroll_scale = Vector2(l[2], 1.0)
+		p.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		add(bg, p, l[0])
 		var s := sprite(l[1])
+		s.scale = Vector2.ONE / BG_DETAIL
 		# Cada capa se repite a su propio ancho (las de ciudad miden dos pantallas)
-		p.repeat_size = Vector2(s.texture.get_width(), 0)
+		p.repeat_size = Vector2(s.texture.get_width() / BG_DETAIL, 0)
 		p.repeat_times = 3
 		s.centered = false
 		s.position = Vector2(0, VIEW_TOP)
@@ -260,10 +265,14 @@ func build_background(level: Node) -> void:
 		for life in l[3]:
 			(front if life[1] else behind).append(life[0])
 		for kind in behind:
-			add(p, city_life(kind, s.texture), "Life%d" % kind)
+			add(p, city_life(kind, s.texture), life_name(kind))
 		add(p, s, "Sprite2D")
 		for kind in front:
-			add(p, city_life(kind, s.texture), "Life%d" % kind)
+			add(p, city_life(kind, s.texture), life_name(kind))
+
+
+func life_name(kind: int) -> String:
+	return "Holograms" if kind == HOLOGRAMS else ["Lights", "Drones", "Traffic", "Smoke", "Rain"][kind]
 
 
 func city_life(kind: int, texture: Texture2D) -> Node2D:
@@ -273,7 +282,7 @@ func city_life(kind: int, texture: Texture2D) -> Node2D:
 	else:
 		n.set_script(CITY_LIFE)
 		n.set("kind", kind)
-	n.set("texture", texture)
+	n.set("layer_width", texture.get_width() / BG_DETAIL)
 	n.position = Vector2(0, VIEW_TOP)
 	n.material = BG_FX_MATERIAL
 	return n

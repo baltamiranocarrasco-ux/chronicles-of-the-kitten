@@ -1,34 +1,27 @@
-"""Genera el fondo parallax de la megaciudad y el tileset del suelo.
+"""Genera el fondo parallax de la megaciudad en alta resolución.
 
 Uso:  python3 tools/generate_city.py
 Requiere Pillow y numpy (pip install pillow numpy).
 
-El fondo busca verse realista dentro de la resolución del juego: bruma que
-aclara y desatura lo lejano, smog iluminado desde abajo por la ciudad,
-fachadas con cara iluminada y cara en sombra, ventanas por pisos (oficinas
-con pisos enteros encendidos, otros apagados), carteles y letreros que
-derraman su luz en las paredes y la niebla, y siluetas de azoteas cercanas.
-Las capas de ciudad miden 768 px de ancho (dos pantallas) para que la
-repetición no se note.
+El gato y el suelo son pixel art a la resolución del juego (384x216); el
+fondo, en cambio, es una ilustración digital con el triple de detalle
+(S = 3): cada capa se dibuja a 1152 px por pantalla y el nivel la muestra a
+escala 1/3, así que en la ventana de 1152x648 se ve píxel a píxel.
 
-Salida en assets/city/ (el suelo del nivel empieza en la fila 152 de la vista):
-  bg_0_sky.png        cielo con smog, nubes iluminadas y luna      384x216   (0 %)
-  bg_1_far.png        horizonte de rascacielos entre la bruma       768x216  (10 %)
-  bg_2_midfar.png     torres con ventanas por pisos y pantallas     768x216  (22 %)
-  bg_3_mid.png        edificios con escaleras de incendio y neón    768x216  (40 %)
-  bg_4_near.png       azoteas cercanas, tanques de agua y cables    768x216  (65 %)
-  tiles.png           atlas 4x4 de 16x16:
-                        fila 0: tejado de chapa (izq, centro, der, centro con charco)
-                        fila 1: muro del edificio (izq, centro, der)
-                        fila 2: viga de acero, plataforma de un sentido (izq, centro, der)
-                        fila 3: púas electrificadas para los fosos (solo la primera)
+  bg_0_sky.png      cielo azul medianoche -> púrpura neón, nubes con sombras
+                    suaves y luna gigante                    1152x648  (0 %)
+  bg_1_far.png      horizonte de rascacielos entre la bruma  2304x648  (10 %)
+  bg_2_midfar.png   torres corporativas de cristal oscuro con reflejos,
+                    lluvia que resbala y pantallas           2304x648  (22 %)
+  bg_3_mid.png      edificios de concreto, escaleras de incendio, neón,
+                    conductos con humo y los 4 proyectores   2304x648  (40 %)
+  bg_4_near.png     azoteas cercanas mojadas, tanques y cables 2304x648 (65 %)
+  city_meta.gd      posiciones (en píxeles del juego) de los proyectores de
+                    hologramas, las ventanas que parpadean y los conductos
+                    que echan humo, para effects/hologram_ads.gd y
+                    effects/city_life.gd
 
-Algunas ventanas de bg_2_midfar usan dos colores clave exactos
-(WINDOW_YELLOW y WINDOW_CYAN) que effects/city_life.gd busca para
-apagarlas y encenderlas, y bg_3_mid lleva proyectores en algunas azoteas
-marcados con HOLO_KEY, donde effects/hologram_ads.gd dibuja hologramas
-publicitarios. Los drones, el tráfico y los hologramas se dibujan por código
-para que respondan a las habilidades de tiempo.
+El suelo del nivel (tiles.png) lo genera tools/generate_tiles.py.
 """
 
 import math
@@ -38,128 +31,160 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-H = 216
-SKY_W = 384
-CITY_W = 768
-HORIZON = 152
-TILE = 16
-OUT_DIR = Path(__file__).resolve().parent.parent / "assets" / "city"
+S = 3                       # detalle del fondo respecto a los píxeles del juego
+H = 216 * S
+SKY_W = 384 * S
+CITY_W = 768 * S
+HZ = 152 * S                # fila donde empieza el suelo del nivel
+ROOT = Path(__file__).resolve().parent.parent
+OUT_DIR = ROOT / "assets" / "city"
 
 
-def rgb(h, a=255):
+def rgb(h):
     h = h.lstrip("#")
-    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (a,)
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
-WINDOW_YELLOW = rgb("#f0c85a")
-WINDOW_CYAN = rgb("#5ad8f0")
-
-# Luz de las ventanas: cálida (sodio/incandescente), fría (fluorescente), LED
-WARM = [rgb("#f0c85a"), rgb("#e8b050"), rgb("#f4d890"), rgb("#d89848")]
-COOL = [rgb("#dce8f4"), rgb("#b8d0ec"), rgb("#9cc4e8")]
-LED = [rgb("#5ad8f0"), rgb("#8ae0ff"), rgb("#c890ff")]
-NEON = [rgb("#ff3cc8"), rgb("#3ce6ff"), rgb("#ff5a3c"), rgb("#96ff3c"), rgb("#b45aff"), rgb("#ffd23c")]
-AVIATION = rgb("#ff3030")
-# Proyector de hologramas publicitarios: effects/hologram_ads.gd busca este
-# píxel exacto en bg_3_mid y dibuja encima el holograma que gira
-HOLO_KEY = rgb("#01fe7f")
-
-# Bruma de la ciudad: el smog refleja las luces en tonos magenta-anaranjados
-HAZE = rgb("#5a3a64")
-FOG = rgb("#8a4a6e")
-FOG_LOW = rgb("#6a3c62")
+def mix(a, b, t):
+    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3))
 
 
-# --- lienzo con composición en punto flotante ------------------------------
+def scale(c, k):
+    return tuple(min(255, c[i] * k) for i in range(3))
+
+
+WARM = [rgb("#ffcf7a"), rgb("#f2b45a"), rgb("#ffe2a8"), rgb("#e89a4a")]
+COOL = [rgb("#e4ecf8"), rgb("#bcd4f0"), rgb("#a4c8ec")]
+LED = [rgb("#6ae4ff"), rgb("#96ecff"), rgb("#c89aff")]
+NEON = [rgb("#ff3cc8"), rgb("#3ce6ff"), rgb("#ff6a3c"), rgb("#b45aff"), rgb("#ffcc3c")]
+AVIATION = rgb("#ff2a2a")
+HAZE = rgb("#4a3a78")
+FOG = rgb("#7a4a96")
+FOG_LOW = rgb("#5a3a7a")
+
+
+# --- lienzo en punto flotante, con antialias y repetición en X --------------
 
 class Canvas:
-    """Imagen RGBA premultiplicada que envuelve en X (la capa se repite)."""
-
     def __init__(self, w, h=H):
         self.w, self.h = w, h
-        self.P = np.zeros((h, w, 3), np.float32)
+        self.P = np.zeros((h, w, 3), np.float32)   # color premultiplicado
         self.A = np.zeros((h, w), np.float32)
 
-    def _cols(self, x0, x1):
-        return np.arange(int(x0), int(x1)) % self.w
-
-    def over(self, y0, y1, x0, x1, color, alpha=1.0):
-        y0, y1 = max(0, int(y0)), min(self.h, int(y1))
-        if y1 <= y0 or x1 <= x0:
+    def blend(self, y0, x0, a, color):
+        """Compone 'a' (alfa, matriz ny x nx) con un color o una matriz de colores."""
+        ny, nx = a.shape
+        ya, yb = max(0, y0), min(self.h, y0 + ny)
+        if yb <= ya or nx == 0:
             return
-        cols = self._cols(x0, x1)
-        c = np.array(color[:3], np.float32) / 255.0
-        a = np.broadcast_to(np.asarray(alpha, np.float32), (y1 - y0, len(cols)))
-        P = self.P[y0:y1][:, cols]
-        A = self.A[y0:y1][:, cols]
-        self.P[y0:y1, cols] = c * a[..., None] + P * (1 - a[..., None])
-        self.A[y0:y1, cols] = a + A * (1 - a)
+        a = a[ya - y0:yb - y0]
+        c = np.asarray(color, np.float32)
+        if c.ndim == 1:
+            c = c / 255.0
+        else:
+            c = c[ya - y0:yb - y0] / 255.0
+        cols = np.arange(x0, x0 + nx) % self.w
+        P = self.P[ya:yb][:, cols]
+        A = self.A[ya:yb][:, cols]
+        a3 = a[..., None]
+        self.P[ya:yb, cols] = c * a3 + P * (1 - a3)
+        self.A[ya:yb, cols] = a + A * (1 - a)
 
     def rect(self, x, y, w, h, color, alpha=1.0):
-        self.over(y, y + h, x, x + w, color, alpha)
+        x, y, w, h = int(round(x)), int(round(y)), int(round(w)), int(round(h))
+        if w > 0 and h > 0:
+            self.blend(y, x, np.full((h, w), alpha, np.float32), color)
 
-    def px(self, x, y, color, alpha=1.0):
-        self.over(y, y + 1, x, x + 1, color, alpha)
+    def vgrad(self, x, y, w, h, top, bottom, alpha=1.0):
+        x, y, w, h = int(round(x)), int(round(y)), int(round(w)), int(round(h))
+        if w <= 0 or h <= 0:
+            return
+        t = np.linspace(0, 1, h, dtype=np.float32)[:, None, None]
+        c = np.array(top, np.float32) * (1 - t) + np.array(bottom, np.float32) * t
+        self.blend(y, x, np.full((h, w), alpha, np.float32), np.broadcast_to(c, (h, w, 3)))
 
-    def line(self, x0, y0, x1, y1, color, alpha=1.0):
-        steps = int(max(abs(x1 - x0), abs(y1 - y0))) + 1
-        seen = set()
-        for i in range(steps + 1):
-            t = i / steps
-            p = (round(x0 + (x1 - x0) * t), round(y0 + (y1 - y0) * t))
-            if p not in seen:
-                seen.add(p)
-                self.px(p[0], p[1], color, alpha)
+    def _field(self, x0, y0, x1, y1):
+        xs = np.arange(int(math.floor(x0)), int(math.ceil(x1)) + 1)
+        ys = np.arange(int(math.floor(y0)), int(math.ceil(y1)) + 1)
+        return xs, ys
+
+    def seg(self, x0, y0, x1, y1, width, color, alpha=1.0):
+        """Línea con antialias (distancia al segmento)."""
+        pad = width + 2
+        xs, ys = self._field(min(x0, x1) - pad, min(y0, y1) - pad, max(x0, x1) + pad, max(y0, y1) + pad)
+        px = xs[None, :] + 0.5
+        py = ys[:, None] + 0.5
+        dx, dy = x1 - x0, y1 - y0
+        L = dx * dx + dy * dy
+        t = np.clip(((px - x0) * dx + (py - y0) * dy) / L, 0, 1) if L > 0 else 0
+        d = np.hypot(px - (x0 + t * dx), py - (y0 + t * dy))
+        a = np.clip(width / 2 + 0.5 - d, 0, 1) * alpha
+        self.blend(int(ys[0]), int(xs[0]), a.astype(np.float32), color)
+
+    def poly(self, pts, width, color, alpha=1.0):
+        for (a, b) in zip(pts, pts[1:]):
+            self.seg(a[0], a[1], b[0], b[1], width, color, alpha)
+
+    def disc(self, cx, cy, r, color, alpha=1.0):
+        xs, ys = self._field(cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1)
+        d = np.hypot(xs[None, :] + 0.5 - cx, ys[:, None] + 0.5 - cy)
+        a = np.clip(r + 0.5 - d, 0, 1) * alpha
+        self.blend(int(ys[0]), int(xs[0]), a.astype(np.float32), color)
 
     def glow(self, cx, cy, r, color, strength):
-        """Halo de luz que cae sobre paredes y niebla (también en el aire)."""
-        y0, y1 = int(cy - r), int(cy + r) + 1
-        x0, x1 = int(cx - r), int(cx + r) + 1
-        ys = np.arange(max(0, y0), min(self.h, y1))
-        if len(ys) == 0:
-            return
-        xs = np.arange(x0, x1)
-        d = np.sqrt((xs[None, :] + 0.5 - cx) ** 2 + (ys[:, None] + 0.5 - cy) ** 2)
+        """Halo de luz difusa (también sobre el aire y la niebla)."""
+        xs, ys = self._field(cx - r, cy - r, cx + r, cy + r)
+        d = np.hypot(xs[None, :] + 0.5 - cx, ys[:, None] + 0.5 - cy)
         a = strength * np.clip(1 - d / r, 0, 1) ** 2
-        self.over(ys[0], ys[-1] + 1, x0, x1, color, a)
+        self.blend(int(ys[0]), int(xs[0]), a.astype(np.float32), color)
 
     def light(self, cx, cy, r, color, amount):
-        """Luz aditiva con caída radial, solo sobre lo ya pintado (reflejo del
-        neón en las fachadas)."""
-        y0, y1 = max(0, int(cy - r)), min(self.h, int(cy + r) + 1)
-        if y1 <= y0:
+        """Luz aditiva con caída radial, solo sobre lo ya pintado."""
+        xs, ys = self._field(cx - r, cy - r, cx + r, cy + r)
+        ya, yb = max(0, int(ys[0])), min(self.h, int(ys[-1]) + 1)
+        if yb <= ya:
             return
-        x0 = int(cx - r)
-        cols = self._cols(x0, int(cx + r) + 1)
-        xs = np.arange(x0, x0 + len(cols))
-        ys = np.arange(y0, y1)
-        d = np.sqrt((xs[None, :] + 0.5 - cx) ** 2 + (ys[:, None] + 0.5 - cy) ** 2)
-        k = amount * np.clip(1 - d / r, 0, 1) ** 2
-        c = np.array(color[:3], np.float32) / 255.0
-        A = self.A[y0:y1][:, cols]
-        P = self.P[y0:y1][:, cols] + c * (k * A)[..., None]
-        self.P[y0:y1, cols] = np.minimum(P, A[..., None])
+        ys = np.arange(ya, yb)
+        d = np.hypot(xs[None, :] + 0.5 - cx, ys[:, None] + 0.5 - cy)
+        k = (amount * np.clip(1 - d / r, 0, 1) ** 2).astype(np.float32)
+        cols = xs % self.w
+        A = self.A[ya:yb][:, cols]
+        c = np.array(color, np.float32) / 255.0
+        P = self.P[ya:yb][:, cols] + c * (k * A)[..., None]
+        self.P[ya:yb, cols] = np.minimum(P, A[..., None])
+
+    def texture(self, x, y, w, h, amount, rnd, cell=6):
+        """Variación de tono tipo concreto / metal sobre lo ya pintado."""
+        x, y, w, h = int(x), int(y), int(w), int(h)
+        ya, yb = max(0, y), min(self.h, y + h)
+        if yb <= ya or w <= 0:
+            return
+        n = noise(w, yb - ya, cell, rnd, 3) - 0.5
+        cols = np.arange(x, x + w) % self.w
+        self.P[ya:yb, cols] *= (1 + n * amount)[..., None]
 
     def haze(self, color, k):
-        """Perspectiva atmosférica: acerca lo pintado al color de la bruma."""
-        c = np.array(color[:3], np.float32) / 255.0
+        c = np.array(color, np.float32) / 255.0
         self.P = self.P * (1 - k) + c * k * self.A[..., None]
 
     def vfog(self, y0, y1, color, amax, power=1.5):
-        """Banco de niebla que se espesa hacia abajo, en toda la capa."""
-        for y in range(max(0, int(y0)), self.h):
-            t = min(1.0, (y - y0) / max(1, (y1 - y0)))
-            self.over(y, y + 1, 0, self.w, color, amax * t ** power)
+        ys = np.arange(max(0, int(y0)), self.h)
+        if len(ys) == 0:
+            return
+        t = np.clip((ys - y0) / max(1, y1 - y0), 0, 1) ** power * amax
+        self.blend(int(ys[0]), 0, np.repeat(t[:, None], self.w, axis=1).astype(np.float32), color)
 
-    def image(self):
+    def image(self, rnd):
         A = self.A[..., None]
-        rgb_ = np.where(A > 1e-4, self.P / np.maximum(A, 1e-4), 0)
-        out = np.concatenate([rgb_, A], axis=2)
+        col = np.where(A > 1e-4, self.P / np.maximum(A, 1e-4), 0)
+        # Tramado muy leve para que los degradados no formen bandas
+        col = col + (np.random.default_rng(rnd.randrange(1 << 30)).random(col.shape) - 0.5) / 255.0
+        out = np.concatenate([col, A], axis=2)
         return Image.fromarray(np.clip(out * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA")
 
 
 def noise(w, h, cell, rnd, octaves=4):
-    """Ruido de valor fractal que envuelve en X (nubes, suciedad)."""
+    """Ruido de valor fractal que envuelve en X."""
     total = np.zeros((h, w), np.float32)
     amp, norm = 1.0, 0.0
     for o in range(octaves):
@@ -186,488 +211,485 @@ def noise(w, h, cell, rnd, octaves=4):
     return total / norm
 
 
-def mix(c1, c2, t):
-    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3)) + (255,)
+# --- capa 0: cielo ----------------------------------------------------------------
 
-
-def scale(c, k):
-    return tuple(min(255, int(v * k)) for v in c[:3]) + (255,)
-
-
-# --- capa 0: cielo -------------------------------------------------------------
-
-def sky():
+def sky(rnd):
     cv = Canvas(SKY_W)
-    stops = [(0, rgb("#06050e")), (55, rgb("#120c26")), (100, rgb("#2a1640")),
-             (135, rgb("#5a2650")), (165, rgb("#8e3c5c")), (216, rgb("#a8506a"))]
+    stops = [(0, rgb("#05081c")), (180, rgb("#0c1238")), (330, rgb("#1e1a58")),
+             (420, rgb("#4a2280")), (470, rgb("#8a2ea0")), (H, rgb("#a8409c"))]
+    col = np.zeros((H, 3), np.float32)
     for y in range(H):
         for (ya, ca), (yb, cb) in zip(stops, stops[1:]):
             if ya <= y <= yb:
-                cv.rect(0, y, SKY_W, 1, mix(ca, cb, (y - ya) / (yb - ya)))
+                t = (y - ya) / (yb - ya)
+                t = t * t * (3 - 2 * t)
+                col[y] = mix(ca, cb, t)
                 break
-    rnd = random.Random(21)
-    # Pocas estrellas: la contaminación lumínica tapa casi todas
-    for _ in range(45):
-        x, y = rnd.randrange(SKY_W), rnd.randrange(0, 70)
-        cv.px(x, y, rgb("#d8d8f0"), rnd.uniform(0.25, 0.9) * (1 - y / 85))
-    # Luna velada por el smog
-    mx, my, mr = 292, 36, 10
-    cv.glow(mx, my, 46, rgb("#7a70a8"), 0.18)
-    cv.glow(mx, my, 18, rgb("#b0b0d0"), 0.18)
-    maria = noise(32, 32, 6, rnd, 3)
-    for y in range(-mr, mr + 1):
-        for x in range(-mr, mr + 1):
-            d = math.hypot(x + 0.5, y + 0.5)
-            if d <= mr:
-                limb = 1 - 0.35 * (d / mr) ** 3
-                m = maria[y + 16, x + 16]
-                shade = limb * (1.0 - 0.35 * max(0.0, min(1.0, (m - 0.45) / 0.2)))
-                cv.px(mx + x, my + y, scale(rgb("#c8c6d4"), shade))
-    # Nubes altas y finas
-    hi = noise(SKY_W, H, 64, rnd, 5)
-    # Smog bajo, iluminado desde abajo por la ciudad
-    lo = noise(SKY_W, H, 48, rnd, 5)
-    for y in range(H):
-        band_hi = max(0.0, 1 - abs(y - 45) / 30)
-        band_lo = min(1.0, max(0.0, (y - 70) / 50))
-        for layer, band, dark, lit, thr in ((hi, band_hi, rgb("#1c1430"), rgb("#4a2a58"), 0.5),
-                                            (lo, band_lo, rgb("#2a1838"), rgb("#c0607a"), 0.42)):
-            if band <= 0:
-                continue
-            row = layer[y]
-            a = np.clip((row - thr) / 0.18, 0, 1) * band * 0.85
-            # Iluminada por debajo: la parte baja de cada nube es más clara
-            under = np.clip((layer[min(H - 1, y + 3)] - row) * 6 + (y / H), 0, 1)
-            for x in np.nonzero(a > 0.02)[0]:
-                cv.px(x, y, mix(dark, lit, float(under[x])), float(a[x]))
+    cv.blend(0, 0, np.ones((H, SKY_W), np.float32), np.repeat(col[:, None, :], SKY_W, axis=1))
+    # Estrellas escasas (la contaminación lumínica tapa casi todas)
+    for _ in range(70):
+        x, y = rnd.uniform(0, SKY_W), rnd.uniform(0, 260)
+        cv.disc(x, y, rnd.uniform(0.4, 0.9), rgb("#e8e8ff"), rnd.uniform(0.3, 0.9) * (1 - y / 300))
+
+    # Luna gigante y nítida
+    mx, my, mr = 850, 175, 118
+    cv.glow(mx, my, mr * 2.6, rgb("#6a70c0"), 0.28)
+    cv.glow(mx, my, mr * 1.5, rgb("#b8bce8"), 0.22)
+    xs, ys = cv._field(mx - mr - 2, my - mr - 2, mx + mr + 2, my + mr + 2)
+    dx = xs[None, :] + 0.5 - mx
+    dy = ys[:, None] + 0.5 - my
+    d = np.hypot(dx, dy)
+    cover = np.clip(mr + 0.5 - d, 0, 1)
+    nz = np.sqrt(np.clip(1 - (d / mr) ** 2, 0, 1))
+    # Luz desde abajo a la izquierda (la ciudad) y sombreado esférico suave
+    lit = np.clip(0.55 + 0.45 * (nz * 0.8 + (-dx / mr) * 0.25 + (dy / mr) * 0.15), 0.35, 1.0)
+    maria = noise(len(xs), len(ys), 40, rnd, 5)
+    craters = noise(len(xs), len(ys), 10, rnd, 3)
+    tone = lit * (1 - 0.28 * np.clip((maria - 0.48) * 4, 0, 1)) * (1 - 0.12 * np.clip((craters - 0.6) * 5, 0, 1))
+    base = np.array(rgb("#e6e4f2"), np.float32)
+    colors = base * tone[..., None]
+    colors = colors * (1 - 0.15 * (1 - nz))[..., None] + np.array(rgb("#b8a8e0"), np.float32) * (0.15 * (1 - nz))[..., None]
+    cv.blend(int(ys[0]), int(xs[0]), cover.astype(np.float32), colors)
+
+    # Nubes con sombras suaves: iluminadas desde abajo por la ciudad (rosa)
+    # y con el borde superior frío; algunas jirones pasan delante de la luna
+    for band_y, band_h, cell, thr, dens, lit_col, dark_col in (
+            (40, 200, 160, 0.46, 0.7, rgb("#5a4a98"), rgb("#10142e")),
+            (230, 190, 180, 0.44, 0.85, rgb("#c0609c"), rgb("#1c1846"))):
+        n = noise(SKY_W, H, cell, rnd, 6)
+        ys_ = np.arange(H)[:, None]
+        band = np.clip(1 - np.abs(ys_ - band_y - band_h / 2) / (band_h / 2), 0, 1)
+        a = np.clip((n - thr) / 0.16, 0, 1) * band * dens
+        # Sombra: comparar con el ruido un poco más arriba (la luz viene de abajo)
+        up = np.roll(n, 6, axis=0)
+        shade = np.clip((n - up) * 7 + 0.5, 0, 1)
+        vert = np.clip((ys_ - band_y) / band_h, 0, 1)
+        t = np.clip(shade * 0.6 + vert * 0.6, 0, 1)
+        colors = np.array(dark_col, np.float32) * (1 - t[..., None]) + np.array(lit_col, np.float32) * t[..., None]
+        cv.blend(0, 0, a.astype(np.float32), colors)
     return cv
 
 
-# --- edificios -----------------------------------------------------------------
+# --- edificios --------------------------------------------------------------------
 
-class Style:
-    def __init__(self, **kw):
-        self.__dict__.update(kw)
-
-
-def windows(cv, x, w, top, st, rnd, keys=None, bottom=H):
-    """Rejilla de ventanas por pisos. Devuelve nada; si keys es una lista,
-    agrega ahí las ventanas encendidas que pueden parpadear."""
-    ww, wh, sx, sy = st.win
-    palette = rnd.choice(st.palettes)
-    lit_p = rnd.uniform(*st.lit)
-    unlit = scale(mix(st.face, rgb("#3a4a6a"), 0.35), 1.15)
-    for fy in range(top + st.margin_top, bottom - wh, sy):
-        state = rnd.random()
-        p = lit_p * (0.15 if state < 0.2 else 3.5 if state > 0.9 else 1.0)
-        for fx in range(x + st.margin, x + w - st.margin - ww + 1, sx):
-            if rnd.random() < p:
-                col = rnd.choice(palette)
-                if keys is not None and fy < 118 and rnd.random() < 0.35:
-                    col = WINDOW_YELLOW if palette is WARM else WINDOW_CYAN
-                    keys.append((fx, fy, col))
-                    cv.rect(fx, fy, ww, wh, col)
-                else:
-                    cv.rect(fx, fy, ww, wh, scale(col, rnd.uniform(0.75, 1.05)))
-            elif st.show_unlit:
-                cv.rect(fx, fy, ww, wh, unlit, 0.6)
-
-
-def building(cv, x, w, top, st, rnd, keys=None):
-    """Torre con cara iluminada, cara lateral en sombra, remates y ventanas."""
-    side = max(1, int(w * st.side_ratio))
+def tiers_for(x, w, top, rnd, setback_p):
     tiers = [(x, w, top)]
-    if w > 14 and rnd.random() < st.setback_p:
-        inset = rnd.randint(2, max(2, w // 5))
-        tiers.append((x + inset, w - 2 * inset, top - rnd.randint(8, 28)))
-        if w > 24 and rnd.random() < 0.4:
-            inset2 = inset + rnd.randint(2, max(2, w // 6))
-            tiers.append((x + inset2, w - 2 * inset2, tiers[-1][2] - rnd.randint(6, 16)))
-    for tx, tw, tt in tiers:
-        cv.rect(tx, tt, tw, H - tt, st.face)
-        cv.rect(tx + tw - side, tt, side, H - tt, st.shade)
-        cv.rect(tx, tt, 1, H - tt, st.rim, 0.8)
-        cv.rect(tx, tt, tw, 1, st.rim, 0.9)
-        if st.floor_lines:
-            for fy in range(tt + 4, H, st.win[3] * 2):
-                cv.rect(tx + 1, fy, tw - side - 1, 1, st.shade, 0.35)
-    ctx, ctw, ctop = tiers[-1]
-    crown = rnd.random()
-    if crown < st.spire_p:
-        h = rnd.randint(6, 18)
-        for i in range(h):
-            half = max(0, (ctw // 2 - 1) * (h - i) // h)
-            cv.rect(ctx + ctw // 2 - half, ctop - i - 1, half * 2 + 1, 1, st.face)
-        cv.px(ctx + ctw // 2, ctop - h - 1, AVIATION)
-        cv.glow(ctx + ctw // 2, ctop - h - 1, 4, AVIATION, 0.35)
-    elif crown < st.spire_p + st.antenna_p:
-        ax = ctx + rnd.randint(1, max(1, ctw - 2))
-        ah = rnd.randint(6, 20)
-        cv.rect(ax, ctop - ah, 1, ah, st.shade)
-        cv.px(ax, ctop - ah, AVIATION)
-        cv.glow(ax, ctop - ah, 4, AVIATION, 0.3)
+    if w > 45 and rnd.random() < setback_p:
+        inset = rnd.randint(6, max(6, w // 5))
+        tiers.append((x + inset, w - 2 * inset, top - rnd.randint(24, 80)))
+        if w > 80 and rnd.random() < 0.45:
+            inset2 = inset + rnd.randint(6, max(6, w // 6))
+            tiers.append((x + inset2, w - 2 * inset2, tiers[-1][2] - rnd.randint(18, 50)))
     return tiers
 
 
-def facade_windows(cv, tiers, st, rnd, keys=None):
+def crown(cv, tx, tw, tt, rnd, metal):
+    """Remate de metal cepillado: aguja o antena con luz de aviación."""
+    r = rnd.random()
+    cx = tx + tw / 2
+    if r < 0.15:
+        h = rnd.randint(20, 50)
+        for i in range(h):
+            half = min(tw / 2 - 2, 9) * (1 - i / h) ** 1.4
+            if half < 0.6:
+                break
+            shade = scale(metal, 0.8 + 0.4 * rnd.random())
+            cv.rect(cx - half, tt - i - 1, half * 2, 1, shade)
+        cv.seg(cx, tt - h, cx, tt - h - 18, 1.2, metal)
+        top = tt - h - 18
+    elif r < 0.65:
+        ax = tx + rnd.uniform(4, max(5, tw - 4))
+        h = rnd.randint(20, 60)
+        cv.seg(ax, tt, ax, tt - h, 1.4, scale(metal, 0.8))
+        cv.seg(ax - 4, tt - h * 0.6, ax + 4, tt - h * 0.6, 1, scale(metal, 0.8))
+        cx, top = ax, tt - h
+    else:
+        return
+    cv.glow(cx, top, 12, AVIATION, 0.45)
+    cv.disc(cx, top, 1.5, AVIATION)
+
+
+def glass_tower(cv, x, w, top, rnd, meta_windows=None):
+    """Torre corporativa de cristal oscuro: cara con reflejo del cielo y
+    montantes, cara lateral en sombra, pisos encendidos y lluvia resbalando."""
+    tiers = tiers_for(x, w, top, rnd, 0.55)
+    palette = rnd.choice([WARM, COOL, COOL, LED])
+    lit_p = rnd.uniform(0.08, 0.3)
+    mw = rnd.choice([6, 7, 9])         # separación de montantes
+    fh = rnd.choice([9, 10, 12])       # altura de piso
+    glass_top, glass_bot = rgb("#0e1330"), rgb("#1c1a46")
+    refl = rgb("#7a6ad0")
+    metal = rgb("#565c7a")
     for tx, tw, tt in tiers:
-        side = max(1, int(tw * st.side_ratio))
-        windows(cv, tx, tw - side, tt, st, rnd, keys)
+        side = max(4, int(tw * 0.2))
+        face = tw - side
+        hgt = H - tt
+        cv.vgrad(tx, tt, face, hgt, glass_top, glass_bot)
+        cv.vgrad(tx + face, tt, side, hgt, scale(glass_top, 0.6), scale(glass_bot, 0.55))
+        # Reflejo diagonal del cielo en el cristal
+        xs = np.arange(face)[None, :]
+        ys = np.arange(hgt)[:, None]
+        off = rnd.uniform(-face, face)
+        band = np.exp(-(((xs - ys * 0.45 - off) / max(8, face * 0.35)) ** 2)) * 0.22
+        cv.blend(tt, tx, band.astype(np.float32), refl)
+        # Pisos y montantes
+        for fy in range(tt + fh, H, fh):
+            cv.rect(tx, fy, face, 1, rgb("#070914"), 0.55)
+            cv.rect(tx, fy + 1, face, 1, rgb("#3a3a70"), 0.25)
+        for mx in range(tx + mw, tx + face, mw):
+            cv.rect(mx, tt, 1, hgt, rgb("#4a5690"), 0.22)
+        # Oficinas encendidas por pisos
+        for fy in range(tt + fh + 2, HZ + fh * 4, fh):
+            state = rnd.random()
+            p = lit_p * (0.1 if state < 0.25 else 3.2 if state > 0.9 else 1.0)
+            for cx in range(tx + 1, tx + face - mw + 1, mw):
+                if rnd.random() < p:
+                    c = rnd.choice(palette)
+                    cv.vgrad(cx + 1, fy, mw - 2, fh - 3, scale(c, 1.0), scale(c, 0.72))
+                    if meta_windows is not None and fy < HZ - 60 and rnd.random() < 0.25:
+                        meta_windows.append((cx + 1, fy, mw - 2, fh - 3))
+        # Lluvia resbalando en finos hilos por el cristal
+        for _ in range(int(face * hgt / 900)):
+            rx = tx + rnd.uniform(2, face - 2)
+            ry = tt + rnd.uniform(0, hgt * 0.8)
+            length = rnd.uniform(20, 90)
+            pts = [(rx + math.sin(i * 0.35 + rx) * 0.8, ry + i * 3) for i in range(int(length / 3))]
+            cv.poly(pts, 0.7, rgb("#c8d0ff"), rnd.uniform(0.12, 0.28))
+            if pts:
+                cv.disc(pts[-1][0], pts[-1][1] + 1, 1.1, rgb("#e0e6ff"), 0.4)
+        # Aristas iluminadas
+        cv.rect(tx, tt, 1, hgt, rgb("#8a7ad8"), 0.55)
+        cv.rect(tx, tt, tw, 2, scale(metal, 1.3))
+        # Metal cepillado en la corona del tramo
+        cv.rect(tx, tt - 4, tw, 4, metal)
+        cv.texture(tx, tt - 4, tw, 4, 0.5, rnd, cell=2)
+    tx, tw, tt = tiers[-1]
+    crown(cv, tx, tw, tt - 4, rnd, metal)
+    return tiers
+
+
+def far_silhouette(cv, x, w, top, rnd, face, lit_p):
+    tiers = tiers_for(x, w, top, rnd, 0.5)
+    for tx, tw, tt in tiers:
+        side = max(2, int(tw * 0.22))
+        cv.vgrad(tx, tt, tw - side, H - tt, face, scale(face, 1.25))
+        cv.vgrad(tx + tw - side, tt, side, H - tt, scale(face, 0.75), scale(face, 0.9))
+        pal = rnd.choice([WARM, COOL])
+        for fy in range(tt + 4, HZ + 20, 4):
+            for fx in range(tx + 2, tx + tw - side - 1, 3):
+                if rnd.random() < lit_p:
+                    cv.rect(fx, fy, 1, 1, rnd.choice(pal), rnd.uniform(0.5, 1.0))
+    tx, tw, tt = tiers[-1]
+    crown(cv, tx, tw, tt, rnd, scale(face, 1.4))
+
+
+def far_city(rnd):
+    cv = Canvas(CITY_W)
+    for face, heights, widths, lit_p, fog, gap in (
+            (rgb("#221f4c"), (260, 470), (30, 80), 0.1, 0.45, (0, 24)),
+            (rgb("#1a1840"), (220, 380), (36, 90), 0.16, 0.0, (6, 40))):
+        x = 0
+        while x < CITY_W:
+            w = rnd.randint(*widths)
+            far_silhouette(cv, x, w, H - rnd.randint(*heights), rnd, face, lit_p)
+            x += w + rnd.randint(*gap)
+        if fog:
+            cv.haze(HAZE, 0.3)
+            cv.vfog(200, H, FOG, fog)
+    cv.haze(HAZE, 0.28)
+    cv.vfog(260, 620, FOG, 0.7, power=1.3)
+    return cv
 
 
 def billboard(cv, x, y, w, h, rnd):
-    """Pantalla publicitaria: degradado de dos neones, "texto" y halo de luz."""
+    """Pantalla publicitaria con degradado, formas y halo que ilumina el entorno."""
     c1, c2 = rnd.sample(NEON, 2)
-    cv.rect(x - 1, y - 1, w + 2, h + 2, rgb("#0c0a14"))
-    for yy in range(h):
-        cv.rect(x, y + yy, w, 1, mix(c1, c2, yy / max(1, h - 1)))
-    for row in range(y + 2, y + h - 2, 3):
-        length = rnd.randint(w // 3, w - 2)
-        cv.rect(x + 1, row, length, 1, rgb("#1a1020"), 0.55)
+    cv.rect(x - 3, y - 3, w + 6, h + 6, rgb("#0a0a14"))
+    cv.vgrad(x, y, w, h, c1, c2)
+    # Silueta de una prótesis (brazo) y barras de texto
+    cx = x + w * 0.3
+    cv.seg(cx, y + h * 0.2, cx + w * 0.12, y + h * 0.55, 3, rgb("#120a1a"), 0.7)
+    cv.seg(cx + w * 0.12, y + h * 0.55, cx + w * 0.02, y + h * 0.85, 2.5, rgb("#120a1a"), 0.7)
+    cv.disc(cx + w * 0.12, y + h * 0.55, 3, rgb("#120a1a"), 0.7)
+    for i, row in enumerate(range(int(y + h * 0.25), int(y + h * 0.8), 6)):
+        cv.rect(x + w * 0.55, row, w * (0.38 - 0.08 * (i % 2)), 2, rgb("#fff4ff"), 0.8)
+    for sy in range(int(y), int(y + h), 2):      # líneas de barrido de la pantalla
+        cv.rect(x, sy, w, 1, rgb("#000000"), 0.12)
     avg = mix(c1, c2, 0.5)
-    cv.glow(x + w / 2, y + h / 2, max(w, h) * 1.4, avg, 0.28)
-    cv.light(x + w / 2, y + h / 2, max(w, h) * 2, avg, 0.35)
+    cv.glow(x + w / 2, y + h / 2, max(w, h) * 1.3, avg, 0.3)
+    cv.light(x + w / 2, y + h / 2, max(w, h) * 2.2, avg, 0.35)
+
+
+def midfar_city(rnd, meta):
+    cv = Canvas(CITY_W)
+    x = rnd.randint(0, 20)
+    towers = []
+    while x < CITY_W:
+        w = rnd.randint(54, 120)
+        top = H - rnd.randint(260, 460)
+        towers.append((x, w, top, glass_tower(cv, x, w, top, rnd, meta["windows"])))
+        x += w + rnd.randint(30, 110)
+    cv.haze(HAZE, 0.18)
+    for x, w, top, tiers in towers:
+        if rnd.random() < 0.2:
+            col = rnd.choice(LED)
+            tx, tw, tt = tiers[-1]
+            cv.rect(tx, tt, 2, H - tt, col, 0.9)
+            cv.glow(tx, (tt + HZ) / 2, 40, col, 0.12)
+        if w >= 80 and rnd.random() < 0.35 and top < 330:
+            billboard(cv, x + 10, top + rnd.randint(30, 70), rnd.randint(40, w - 36), rnd.randint(36, 60), rnd)
+    cv.vfog(330, H, FOG, 0.6)
+    return cv
+
+
+def window_grid(cv, x, w, tt, rnd, palette):
+    """Ventanas empotradas en concreto: marco, vidrio encendido o reflejando,
+    alféizar claro y manchas de lluvia debajo."""
+    ww, wh, sx, sy = 7, 10, 14, 19
+    lit_p = rnd.uniform(0.15, 0.4)
+    for fy in range(tt + 12, HZ + 40, sy):
+        for fx in range(x + 7, x + w - ww - 5, sx):
+            cv.rect(fx - 1, fy - 1, ww + 2, wh + 2, rgb("#0a0810"))
+            if rnd.random() < lit_p:
+                c = rnd.choice(palette)
+                cv.vgrad(fx, fy, ww, wh, c, scale(c, 0.7))
+                if rnd.random() < 0.3:          # persiana
+                    for by in range(fy + 1, fy + wh, 2):
+                        cv.rect(fx, by, ww, 1, rgb("#2a1a10"), 0.35)
+            else:
+                cv.vgrad(fx, fy, ww, wh, rgb("#262a50"), rgb("#12142a"))
+                cv.seg(fx + 1, fy + wh - 2, fx + ww - 2, fy + 1, 1, rgb("#6a6aa8"), 0.35)
+            cv.rect(fx - 1, fy + wh + 1, ww + 2, 1, rgb("#4a4658"))
+            if rnd.random() < 0.3:
+                cv.rect(fx + rnd.randint(0, ww - 1), fy + wh + 2, 1, rnd.randint(8, 22), rgb("#08060c"), 0.3)
+
+
+def fire_escape(cv, x, tt, w, rnd):
+    dark = rgb("#07050c")
+    for fy in range(tt + 20, HZ + 20, 38):
+        cv.rect(x, fy, w, 2, dark)
+        cv.seg(x, fy - 9, x + w, fy - 9, 0.8, dark)
+        for rx in range(x, x + w + 1, 6):
+            cv.seg(rx, fy - 9, rx, fy, 0.7, dark)
+        cv.seg(x + 3, fy + 36, x + w - 4, fy + 2, 1.2, dark)
+
+
+def vent(cv, x, tt, rnd, meta_vents):
+    """Conducto de ventilación en la azotea con humo denso que sube."""
+    metal = rgb("#3a3a4e")
+    cv.rect(x, tt - 16, 7, 16, metal)
+    cv.rect(x - 2, tt - 19, 11, 3, scale(metal, 1.3))
+    cv.rect(x, tt - 16, 2, 16, scale(metal, 1.5), 0.6)
+    # Penacho de humo estático (el animado lo agrega city_life.gd)
+    for i in range(10):
+        t = i / 9
+        cv.glow(x + 3.5 + math.sin(t * 3 + x) * 6 + t * 10, tt - 22 - t * 70, 8 + t * 16,
+                rgb("#8a7a9a"), 0.22 * (1 - t))
+    meta_vents.append((x + 3.5, tt - 20))
 
 
 def neon_sign(cv, x, y, h, rnd):
-    """Letrero vertical con glifos, sobresale de la fachada."""
+    """Letrero vertical: caja oscura con glifos de neón en trazos finos."""
     col = rnd.choice(NEON)
-    cv.rect(x - 1, y - 1, 5, h + 2, rgb("#120c18"))
-    cv.rect(x, y, 3, h, scale(col, 0.35))
-    for gy in range(y + 1, y + h - 3, 5):
-        glyph = rnd.getrandbits(9)
-        for i in range(9):
-            if glyph >> i & 1:
-                cv.px(x + i % 3, gy + i // 3, col)
-    cv.glow(x + 1.5, y + h / 2, h * 0.8, col, 0.22)
-    cv.light(x + 1.5, y + h / 2, h, col, 0.4)
+    cv.rect(x - 2, y - 2, 14, h + 4, rgb("#0c0810"))
+    cv.rect(x, y, 10, h, scale(col, 0.18))
+    gy = y + 4
+    while gy + 12 < y + h:
+        for _ in range(rnd.randint(2, 4)):
+            ax, ay = x + 2 + rnd.randint(0, 6), gy + rnd.randint(0, 9)
+            bx, by = x + 2 + rnd.randint(0, 6), gy + rnd.randint(0, 9)
+            cv.seg(ax, ay, bx, by, 1.2, col)
+        gy += 14
+    cv.glow(x + 5, y + h / 2, h * 0.7, col, 0.25)
+    cv.light(x + 5, y + h / 2, h * 0.9, col, 0.5)
 
 
-def fire_escape(cv, x, top, w, color, rnd):
-    for fy in range(top + 6, HORIZON + 10, 9):
-        cv.rect(x, fy, w, 1, color)
-        cv.rect(x, fy - 3, 1, 3, color, 0.7)
-        cv.rect(x + w - 1, fy - 3, 1, 3, color, 0.7)
-        cv.line(x + 1, fy + 8, x + w - 2, fy + 1, color, 0.8)
+def projector(cv, cx, tt):
+    """Proyector industrial de diseño angular y metálico (el anillo LED y el
+    haz los dibuja effects/hologram_ads.gd)."""
+    dark = rgb("#16141f")
+    metal = rgb("#5a6078")
+    hi = rgb("#9aa2bc")
+    # Base trapezoidal
+    for i in range(10):
+        half = 22 - i * 0.8
+        cv.rect(cx - half, tt - 1 - i, half * 2, 1, dark if i % 3 else scale(metal, 0.7))
+    # Carcasa angular y cabezal
+    cv.seg(cx - 14, tt - 10, cx - 8, tt - 22, 3, metal)
+    cv.seg(cx + 14, tt - 10, cx + 8, tt - 22, 3, metal)
+    cv.rect(cx - 9, tt - 26, 18, 6, dark)
+    cv.rect(cx - 9, tt - 26, 18, 1, hi)
+    cv.rect(cx - 6, tt - 29, 12, 3, metal)
+    cv.rect(cx - 6, tt - 29, 12, 1, hi)
+    cv.disc(cx - 16, tt - 5, 1.2, AVIATION)
 
 
-def water_tank(cv, x, base, color, rim):
-    cv.rect(x, base - 12, 9, 8, color)
-    cv.rect(x + 1, base - 14, 7, 2, color)
-    cv.rect(x + 3, base - 15, 3, 1, color)
-    for i in (1, 7):
-        cv.rect(x + i, base - 4, 1, 4, color)
-    cv.line(x + 1, base - 1, x + 7, base - 4, color)
-    cv.rect(x, base - 12, 9, 1, rim, 0.6)
-    for yy in (base - 10, base - 7):
-        cv.rect(x, yy, 9, 1, scale(color, 1.4), 0.5)
-
-
-def skyline(cv, st, rnd, keys=None, extra=None):
-    x = rnd.randint(0, 10)
-    tiers_all = []
-    while x < cv.w:
-        w = rnd.randint(*st.width)
-        top = H - rnd.randint(*st.height)
-        tiers = building(cv, x, w, top, st, rnd)
-        tiers_all.append((x, w, top, tiers))
-        x += w + rnd.randint(*st.gap)
-    return tiers_all
-
-
-# --- capa 1: horizonte lejano ------------------------------------------------------
-
-def far_city():
+def mid_city(rnd, meta):
     cv = Canvas(CITY_W)
-    rnd = random.Random(33)
-    # Dos filas de siluetas para dar profundidad dentro de la misma capa
-    back = Style(face=rgb("#2c2446"), shade=rgb("#221c3a"), rim=rgb("#3e3260"),
-                 side_ratio=0.2, setback_p=0.5, spire_p=0.15, antenna_p=0.45,
-                 width=(10, 26), height=(95, 185), gap=(0, 2),
-                 win=(1, 1, 2, 3), margin=1, margin_top=3, lit=(0.08, 0.2),
-                 palettes=[WARM, COOL], show_unlit=False, floor_lines=False)
-    front = Style(**{**back.__dict__, "face": rgb("#221c3a"), "shade": rgb("#18142c"),
-                     "rim": rgb("#352c56"), "height": (80, 150), "width": (12, 30),
-                     "lit": (0.12, 0.3)})
-    for st in (back, front):
-        for _x, _w, _t, tiers in skyline(cv, st, rnd):
-            facade_windows(cv, tiers, st, rnd)
-        if st is back:
-            cv.haze(HAZE, 0.35)
-            cv.vfog(60, 216, FOG, 0.55)
-    cv.haze(HAZE, 0.3)
-    cv.vfog(80, 200, FOG, 0.75, power=1.3)
-    return cv
-
-
-# --- capa 2: torres medianas con pantallas ------------------------------------------
-
-def midfar_city(keys):
-    cv = Canvas(CITY_W)
-    rnd = random.Random(52)
-    st = Style(face=rgb("#1e1a34"), shade=rgb("#141126"), rim=rgb("#3a3060"),
-               side_ratio=0.22, setback_p=0.45, spire_p=0.12, antenna_p=0.5,
-               width=(18, 40), height=(95, 165), gap=(6, 24),
-               win=(1, 1, 2, 2), margin=2, margin_top=4, lit=(0.1, 0.32),
-               palettes=[WARM, COOL, LED], show_unlit=True, floor_lines=True)
-    towers = skyline(cv, st, rnd)
-    cv.haze(HAZE, 0.25)
-    for _x, _w, _t, tiers in towers:
-        facade_windows(cv, tiers, st, rnd, keys)
-    # Franjas LED en las aristas de algunas torres
-    for x, w, top, tiers in towers:
-        if rnd.random() < 0.18:
-            col = rnd.choice(LED)
-            tx, tw, tt = tiers[-1]
-            cv.rect(tx, tt, 1, H - tt, col, 0.8)
-            cv.glow(tx, (tt + HORIZON) / 2, 10, col, 0.15)
-    # Pantallas gigantes
-    for x, w, top, tiers in towers:
-        if w >= 24 and rnd.random() < 0.35 and top < 110:
-            bw, bh = rnd.randint(10, w - 8), rnd.randint(12, 22)
-            billboard(cv, x + 3, top + rnd.randint(6, 20), bw, bh, rnd)
-    cv.vfog(110, 216, FOG, 0.6)
-    return cv
-
-
-# --- capa 3: edificios cercanos con escaleras de incendio y neón ---------------------
-
-def projector(cv, cx, top):
-    """Proyector de hologramas sobre una azotea (la lente es el color clave)."""
-    base = rgb("#0c0a14")
-    cv.rect(cx - 4, top - 3, 9, 3, base)
-    cv.rect(cx - 2, top - 5, 5, 2, base)
-    cv.rect(cx - 4, top - 3, 9, 1, rgb("#4a3a66"), 0.8)
-    cv.px(cx - 3, top - 2, AVIATION)
-
-
-def mid_city(holo_keys):
-    cv = Canvas(CITY_W)
-    rnd = random.Random(47)
-    st = Style(face=rgb("#1a1628"), shade=rgb("#0f0c1a"), rim=rgb("#4a3a66"),
-               side_ratio=0.18, setback_p=0.25, spire_p=0.0, antenna_p=0.35,
-               width=(34, 64), height=(100, 150), gap=(14, 40),
-               win=(2, 3, 5, 6), margin=3, margin_top=5, lit=(0.12, 0.35),
-               palettes=[WARM, WARM, COOL, LED], show_unlit=True, floor_lines=True)
-    blocks = skyline(cv, st, rnd)
-    cv.haze(HAZE, 0.12)
+    blocks = []
+    x = rnd.randint(0, 30)
+    while x < CITY_W:
+        w = rnd.randint(100, 190)
+        top = H - rnd.randint(300, 450)
+        tiers = tiers_for(x, w, top, rnd, 0.25)
+        blocks.append((x, w, top, tiers))
+        x += w + rnd.randint(40, 120)
+    concrete = rgb("#1e1a2a")
     for x, w, top, tiers in blocks:
-        facade_windows(cv, tiers, st, rnd)
-        # Aires acondicionados colgando de algunas ventanas
-        for _ in range(rnd.randint(2, 6)):
-            ax = x + rnd.randint(3, w - 8)
-            ay = top + rnd.randint(8, 60)
-            cv.rect(ax, ay, 3, 2, rgb("#3a3648"))
-            cv.px(ax, ay + 2, rgb("#141220"))
-        if rnd.random() < 0.55:
-            fx = x + rnd.randint(4, max(4, w - 18))
-            fire_escape(cv, fx, top, 12, rgb("#08060e"), rnd)
-        if rnd.random() < 0.3:
-            water_tank(cv, x + rnd.randint(2, max(2, w - 12)), top, rgb("#0e0b18"), st.rim)
-    # Letreros verticales de neón y alguna pantalla
-    for x, w, top, tiers in blocks:
-        if rnd.random() < 0.6:
-            neon_sign(cv, x + w - 2, top + rnd.randint(10, 30), rnd.randint(14, 30), rnd)
-        if rnd.random() < 0.2:
-            billboard(cv, x + 4, top + rnd.randint(8, 24), min(w - 10, 26), rnd.randint(10, 16), rnd)
-    # Proyectores de hologramas en azoteas anchas, separados entre sí: el
-    # holograma flota ~55 px sobre el proyector, así que la azotea no puede
-    # estar demasiado alta
-    last = -999
+        pal = rnd.choice([WARM, WARM, COOL, LED])
+        for tx, tw, tt in tiers:
+            side = max(8, int(tw * 0.16))
+            cv.vgrad(tx, tt, tw - side, H - tt, concrete, scale(concrete, 1.25))
+            cv.vgrad(tx + tw - side, tt, side, H - tt, scale(concrete, 0.6), scale(concrete, 0.75))
+            cv.texture(tx, tt, tw, H - tt, 0.35, rnd, cell=8)
+            window_grid(cv, tx, tw - side, tt, rnd, pal)
+            cv.rect(tx, tt, tw, 3, rgb("#3a3450"))          # pretil
+            cv.rect(tx, tt, 1, H - tt, rgb("#6a5a90"), 0.5)
+    cv.haze(HAZE, 0.1)
     for x, w, top, tiers in blocks:
         tx, tw, tt = tiers[-1]
-        if tw >= 16 and 72 <= tt <= 112 and tx - last >= 200:
-            cx = tx + tw // 2
-            projector(cv, cx, tt)
-            holo_keys.append((cx, tt - 5))
-            last = tx
-    cv.vfog(125, 216, FOG_LOW, 0.5)
+        for _ in range(rnd.randint(2, 6)):                    # aires acondicionados
+            ax, ay = x + rnd.randint(8, w - 20), top + rnd.randint(20, 160)
+            cv.rect(ax, ay, 9, 6, rgb("#3e3a4c"))
+            for gx in range(ax + 1, ax + 9, 2):
+                cv.rect(gx, ay + 1, 1, 4, rgb("#1a1824"))
+            cv.rect(ax + 4, ay + 6, 1, rnd.randint(6, 18), rgb("#0a0810"), 0.35)
+        if rnd.random() < 0.55:
+            fire_escape(cv, x + rnd.randint(10, max(10, w - 50)), top, 36, rnd)
+        if rnd.random() < 0.6:
+            vent(cv, tx + rnd.randint(6, max(6, tw - 20)), tt, rnd, meta["vents"])
+        if rnd.random() < 0.6:
+            neon_sign(cv, x + w - 6, top + rnd.randint(30, 90), rnd.randint(50, 100), rnd)
+        if rnd.random() < 0.2:
+            billboard(cv, x + 12, top + rnd.randint(25, 70), min(w - 30, 80), rnd.randint(30, 46), rnd)
+    # Cuatro proyectores repartidos a lo largo de la capa (uno por cuarto),
+    # en la azotea apta más cercana a cada punto; el holograma flota ~55 px
+    # del juego sobre el proyector, así que la azotea no puede estar muy alta
+    fits = [b for b in blocks if b[3][-1][1] >= 50 and 210 <= b[3][-1][2] <= 350]
+    for target in (CITY_W * (k + 0.5) / 4 for k in range(4)):
+        free = [b[3][-1] for b in fits
+                if all(abs(b[3][-1][0] + b[3][-1][1] // 2 - p[0]) >= 330 for p in meta["projectors"])]
+        if not free:
+            continue
+        tx, tw, tt = min(free, key=lambda t: abs(t[0] + t[1] / 2 - target))
+        cx = tx + tw // 2
+        projector(cv, cx, tt)
+        meta["projectors"].append((cx, tt - 29))
+    cv.vfog(375, H, FOG_LOW, 0.5)
     return cv
 
 
-# --- capa 4: azoteas cercanas ---------------------------------------------------------
+def water_tank(cv, x, base, dark, rim):
+    cv.rect(x, base - 36, 27, 24, dark)
+    for sx in range(x + 3, x + 27, 4):                        # duelas
+        cv.rect(sx, base - 36, 1, 24, scale(dark, 1.6), 0.5)
+    for hy in (base - 30, base - 21):                          # aros
+        cv.rect(x, hy, 27, 1, scale(dark, 2.2), 0.6)
+    for i in range(10):                                        # techo cónico
+        half = 14 - i * 1.3
+        cv.rect(x + 13.5 - half, base - 37 - i, half * 2, 1, dark)
+    cv.rect(x, base - 36, 27, 1, rim, 0.8)
+    for lx in (x + 3, x + 23):                                 # patas
+        cv.seg(lx, base - 12, lx, base, 1.5, dark)
+    cv.seg(x + 3, base, x + 23, base - 12, 1, dark)
+    cv.seg(x + 3, base - 12, x + 23, base, 1, dark)
 
-def near_city():
+
+def near_city(rnd):
     cv = Canvas(CITY_W)
-    rnd = random.Random(61)
-    dark = rgb("#0c0a14")
-    rim_cols = [rgb("#7a3a7a"), rgb("#3a6a8a"), rgb("#8a4a5a")]
-    x = 0
+    dark = rgb("#0b0912")
+    rims = [rgb("#b050b0"), rgb("#50a0d0"), rgb("#d06080")]
     roofs = []
+    x = 0
     while x < CITY_W:
-        w = rnd.randint(36, 90)
-        top = rnd.randint(126, 148)
-        rim = rnd.choice(rim_cols)
-        cv.rect(x, top, w, H - top, dark)
-        cv.rect(x, top, w, 1, rim)
-        cv.rect(x, top, 1, H - top, rim, 0.5)
-        # Pretil y algunas ventanas grandes cálidas
-        cv.rect(x, top + 2, w, 1, rgb("#16121e"))
+        w = rnd.randint(110, 270)
+        top = rnd.randint(378, 444)
+        rim = rnd.choice(rims)
+        cv.vgrad(x, top, w, H - top, rgb("#120f1c"), dark)
+        cv.rect(x, top, w, 2, rim, 0.9)
+        cv.rect(x, top + 2, w, 3, scale(rim, 0.35), 0.5)          # brillo mojado
+        cv.rect(x, top, 1, H - top, rim, 0.45)
+        for _ in range(rnd.randint(1, 5)):                        # charcos que reflejan
+            px_ = x + rnd.randint(5, w - 30)
+            cv.rect(px_, top + 1, rnd.randint(10, 26), 1, rnd.choice(NEON), 0.5)
         for _ in range(rnd.randint(0, 3)):
-            wx = x + rnd.randint(4, w - 8)
-            wy = top + rnd.randint(8, 30)
-            col = rnd.choice(WARM)
-            cv.rect(wx, wy, 3, 4, scale(col, 0.8))
-            cv.glow(wx + 1.5, wy + 2, 8, col, 0.12)
-        # Estructuras de azotea
+            wx, wy = x + rnd.randint(10, w - 20), top + rnd.randint(20, 80)
+            c = rnd.choice(WARM)
+            cv.vgrad(wx, wy, 8, 11, c, scale(c, 0.7), 0.85)
+            cv.glow(wx + 4, wy + 5, 22, c, 0.12)
         item = rnd.random()
         if item < 0.35:
-            water_tank(cv, x + rnd.randint(4, w - 14), top, dark, rim)
+            water_tank(cv, x + rnd.randint(10, w - 40), top, dark, rim)
         elif item < 0.6:
-            # Armazón de un cartel visto desde atrás
-            bx = x + rnd.randint(4, max(4, w - 34))
-            bh = rnd.randint(14, 22)
-            for i in range(0, 30, 6):
-                cv.rect(bx + i, top - bh, 1, bh, dark)
-            cv.rect(bx, top - bh, 30, 2, dark)
-            cv.line(bx, top, bx + 12, top - bh, dark)
-            cv.line(bx + 18, top - bh, bx + 29, top, dark)
-            cv.glow(bx + 15, top - bh - 2, 22, rnd.choice(NEON), 0.18)
-        elif item < 0.8:
-            # Caseta de escalera y antena parabólica
-            cx = x + rnd.randint(4, w - 16)
-            cv.rect(cx, top - 9, 12, 9, dark)
-            cv.rect(cx, top - 9, 12, 1, rim, 0.7)
-            cv.rect(cx + 4, top - 6, 3, 5, rgb("#e8b050"), 0.7)
-            for i in range(5):
-                cv.rect(cx + 13 + i, top - 4 - i + abs(i - 2), 1, 2, dark)
+            bx, bh = x + rnd.randint(10, max(10, w - 100)), rnd.randint(40, 66)
+            for i in range(0, 91, 15):                             # armazón de cartel
+                cv.seg(bx + i, top, bx + i, top - bh, 1.5, dark)
+            cv.rect(bx, top - bh, 91, 4, dark)
+            cv.seg(bx, top, bx + 40, top - bh, 1, dark)
+            cv.seg(bx + 50, top - bh, bx + 90, top, 1, dark)
+            cv.glow(bx + 45, top - bh - 6, 70, rnd.choice(NEON), 0.2)
+        elif item < 0.85:
+            cx = x + rnd.randint(10, w - 60)
+            cv.rect(cx, top - 27, 36, 27, dark)                      # caseta de escalera
+            cv.rect(cx, top - 27, 36, 2, rim, 0.8)
+            cv.vgrad(cx + 12, top - 19, 9, 17, rgb("#ffcf7a"), rgb("#b87a3a"), 0.8)
+            cv.glow(cx + 16, top - 10, 30, rgb("#ffcf7a"), 0.1)
+            cv.seg(cx + 42, top - 30, cx + 42, top, 1.5, dark)       # antena parabólica
+            cv.disc(cx + 46, top - 32, 6, dark)
+            cv.seg(cx + 46, top - 32, cx + 52, top - 38, 1, dark)
         roofs.append((x, w, top))
-        x += w + rnd.randint(30, 80)
-    # Tendido eléctrico entre postes
-    poles = [(px, t) for px, w, t in roofs[::2]]
-    for (x0, t0), (x1, t1) in zip(poles, poles[1:] + [(poles[0][0] + CITY_W, poles[0][1])]):
-        cv.rect(x0 + 2, t0 - 26, 1, 26, dark)
-        cv.rect(x0 - 1, t0 - 24, 7, 1, dark)
-        for k, dy in ((0, -24), (5, -24)):
-            steps = int(x1 - x0)
-            for i in range(steps):
-                t = i / steps
-                y = (t0 + dy) + (t1 - t0) * t + 10 * math.sin(math.pi * t)
-                cv.px(x0 - 1 + k + i, y, rgb("#07050c"))
-    cv.vfog(150, 216, FOG_LOW, 0.3)
+        x += w + rnd.randint(80, 220)
+    # Tendido eléctrico con comba entre postes
+    poles = [(rx + 6, rt) for rx, rw, rt in roofs[::2]]
+    poles.append((poles[0][0] + CITY_W, poles[0][1]))
+    for (x0, t0), (x1, t1) in zip(poles, poles[1:]):
+        cv.rect(x0, t0 - 78, 3, 78, dark)
+        cv.rect(x0 - 8, t0 - 72, 19, 2, dark)
+        for k in (-7, 9):
+            pts = []
+            for i in range(0, 41):
+                t = i / 40
+                pts.append((x0 + k + (x1 - x0) * t, (t0 - 72) + (t1 - t0) * t + 30 * math.sin(math.pi * t)))
+            cv.poly(pts, 1.1, rgb("#05040a"))
+    cv.vfog(450, H, FOG_LOW, 0.3)
     return cv
 
 
-# --- capa 5: tileset del suelo ----------------------------------------------------------
-
-ROOF = rgb("#4a4e68")
-ROOF_HI = rgb("#8a92b4")
-ROOF_DK = rgb("#30324a")
-WALL = rgb("#1e1c30")
-WALL_HI = rgb("#2e2a46")
-WALL_DK = rgb("#141222")
-EDGE = rgb("#0a0812")
-BEAM = rgb("#6c7490")
-BEAM_HI = rgb("#a8b0cc")
-BEAM_DK = rgb("#3c4058")
-PUDDLE = rgb("#161a34")
-SPIKE = rgb("#5a6078")
-SPIKE_TIP = rgb("#6af0ff")
-PUDDLE_NEONS = [(rgb("#ff3cc8"), rgb("#7a1c62")), (rgb("#96ff3c"), rgb("#3e6a18")),
-                (rgb("#3ce6ff"), rgb("#1a5e6e"))]
-
-
-def tiles():
-    img = Image.new("RGBA", (TILE * 4, TILE * 4), (0, 0, 0, 0))
-
-    def put(tx, ty, x, y, c):
-        img.putpixel((tx * TILE + x, ty * TILE + y), c)
-
-    for col in range(3):
-        for row in range(2):
-            for y in range(TILE):
-                for x in range(TILE):
-                    if row == 0 and y < 5:
-                        # Chapa corrugada del tejado
-                        if y == 0:
-                            c = ROOF_HI
-                        elif y == 4:
-                            c = ROOF_DK
-                        else:
-                            c = ROOF if x % 3 else ROOF_DK
-                        if y == 2 and x in (3, 11):
-                            c = ROOF_HI  # remaches
-                    else:
-                        c = WALL
-                        if x in (0, 8):
-                            c = WALL_DK
-                        if y % 8 == 7:
-                            c = WALL_DK
-                        if x in (1, 9) and y % 8 < 7:
-                            c = WALL_HI
-                    if (col == 0 and x == 0) or (col == 2 and x == TILE - 1):
-                        c = EDGE
-                    put(col, row, x, y, c)
-    # Tejado central con charco que refleja el neón (1-2 px borrosos)
-    for y in range(TILE):
-        for x in range(TILE):
-            put(3, 0, x, y, img.getpixel((TILE + x, y)))
-    for x in range(3, 13):
-        put(3, 0, x, 0, PUDDLE)
-        put(3, 0, x, 1, PUDDLE if x not in (3, 12) else ROOF)
-    for x, c in ((5, PUDDLE_NEONS[0][0]), (6, PUDDLE_NEONS[0][1]), (9, PUDDLE_NEONS[2][0]),
-                 (10, PUDDLE_NEONS[2][1])):
-        put(3, 0, x, 0, c)
-    put(3, 0, 7, 1, PUDDLE_NEONS[1][1])
-    # Viga de acero (plataforma de un sentido)
-    for col in range(3):
-        for y in range(7):
-            for x in range(TILE):
-                if y in (0, 6):
-                    c = EDGE
-                elif y == 1:
-                    c = BEAM_HI
-                elif y == 5:
-                    c = BEAM_DK
-                else:
-                    c = BEAM if x % 4 else BEAM_DK
-                if (col == 0 and x == 0) or (col == 2 and x == TILE - 1):
-                    c = EDGE
-                put(col, 2, x, y, c)
-        for x in range(2, TILE - 2, 5):
-            put(col, 2, x, 3, BEAM_HI)
-    # Púas electrificadas
-    for x in range(TILE):
-        peak = x % 8
-        h = int(10 - abs(peak - 3.5) * 2)
-        for y in range(TILE - 4, TILE):
-            put(0, 3, x, y, WALL_DK)
-        for y in range(TILE - 4 - h, TILE - 4):
-            put(0, 3, x, y, SPIKE)
-        if TILE - 5 - h >= 0:
-            put(0, 3, x, TILE - 5 - h, SPIKE_TIP if peak in (3, 4) else EDGE)
-    return img
-
+# --- salida -----------------------------------------------------------------------
 
 def save(img, name):
-    img.save(OUT_DIR / name)
-    print(f"Guardado {OUT_DIR / name}")
+    img.save(OUT_DIR / name, optimize=True)
+    print(f"Guardado {OUT_DIR / name} {img.size}")
+
+
+def write_meta(meta):
+    def fmt(items):
+        return ",\n\t".join("[" + ", ".join(f"{v / S:.2f}" for v in it) + "]" for it in items)
+    text = (
+        "## Generado por tools/generate_city.py: no editar a mano.\n"
+        "## Posiciones en píxeles del juego, relativas a la capa.\n\n"
+        "## Proyectores de hologramas en bg_3_mid: [x, y del cabezal]\n"
+        f"const PROJECTORS := [\n\t{fmt(meta['projectors'])},\n]\n\n"
+        "## Ventanas que se apagan y encienden en bg_2_midfar: [x, y, ancho, alto]\n"
+        f"const WINDOWS := [\n\t{fmt(meta['windows'])},\n]\n\n"
+        "## Conductos de ventilación que echan humo en bg_3_mid: [x, y]\n"
+        f"const VENTS := [\n\t{fmt(meta['vents'])},\n]\n"
+    )
+    path = OUT_DIR / "city_meta.gd"
+    path.write_text(text)
+    print(f"Guardado {path} ({len(meta['projectors'])} proyectores, "
+          f"{len(meta['windows'])} ventanas, {len(meta['vents'])} conductos)")
 
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    for old in ("bg_2_mid.png", "bg_3_near.png"):  # nombres de la versión anterior
-        for f in (OUT_DIR / old, OUT_DIR / (old + ".import")):
-            if f.exists():
-                f.unlink()
-    save(sky().image(), "bg_0_sky.png")
-    save(far_city().image(), "bg_1_far.png")
-    keys = []
-    img = midfar_city(keys).image()
-    # Las ventanas que parpadean llevan el color clave exacto (la niebla y
-    # los halos pueden haberlas teñido)
-    for x, y, col in keys:
-        if img.getpixel((x % CITY_W, y))[3] == 255:
-            img.putpixel((x % CITY_W, y), col)
-    save(img, "bg_2_midfar.png")
-    holo_keys = []
-    img = mid_city(holo_keys).image()
-    for x, y in holo_keys:
-        img.putpixel((x % CITY_W, y), HOLO_KEY)
-    print(f"Proyectores de hologramas: {holo_keys}")
-    save(img, "bg_3_mid.png")
-    save(near_city().image(), "bg_4_near.png")
-    save(tiles(), "tiles.png")
+    meta = {"projectors": [], "windows": [], "vents": []}
+    save(sky(random.Random(21)).image(random.Random(1)), "bg_0_sky.png")
+    save(far_city(random.Random(33)).image(random.Random(2)), "bg_1_far.png")
+    save(midfar_city(random.Random(52), meta).image(random.Random(3)), "bg_2_midfar.png")
+    save(mid_city(random.Random(47), meta).image(random.Random(4)), "bg_3_mid.png")
+    save(near_city(random.Random(61)).image(random.Random(5)), "bg_4_near.png")
+    write_meta(meta)
 
 
 if __name__ == "__main__":

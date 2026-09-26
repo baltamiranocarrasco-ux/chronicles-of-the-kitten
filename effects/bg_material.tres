@@ -7,4 +7,4 @@ shader = ExtResource("1_shader")
 shader_parameter/smear = 0.0
 shader_parameter/freeze = 0.0
 shader_parameter/allow_smear = true
-shader_parameter/smear_px = 8.0
+shader_parameter/smear_px = 24.0
