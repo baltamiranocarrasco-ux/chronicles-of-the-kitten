@@ -100,6 +100,8 @@ func _init() -> void:
 	player.position = Vector2(48, -16)
 	add(level, player, "Player")
 	var cam := Camera2D.new()
+	# Con la interpolación de física la cámara debe ir en el paso de física
+	cam.process_callback = Camera2D.CAMERA2D_PROCESS_PHYSICS
 	cam.limit_left = 0
 	cam.limit_right = LEVEL_TILES * T
 	cam.limit_top = VIEW_TOP

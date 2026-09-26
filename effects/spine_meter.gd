@@ -26,6 +26,7 @@ const SMOKE := Color(0.72, 0.72, 0.76)
 const LENS_ON := Color(0.35, 0.95, 1.0)
 const PULSE_PERIOD := 2.4 ## segundos por "respiración" de la espina en reposo
 const RETICLE_TIME := 0.8 ## duración del haz de retícula al activar una habilidad
+const DENIED_TIME := 0.4 ## parpadeo rojo cuando se niega una habilidad
 
 @export var powers_path: NodePath = ^"../TimePowers"
 @export var sprite_path: NodePath = ^"../Sprite2D"
@@ -37,6 +38,7 @@ var _smoke := [] ## {pos, vel, life, max, size}
 var _smoke_timer := 0.0
 var _flash := {} ## segmento -> tiempo restante del destello al pagar el Za Warudo
 var _reticle := 0.0
+var _denied := 0.0
 
 @onready var powers: TimePowers = get_node(powers_path)
 @onready var sprite: Sprite2D = get_node(sprite_path)
@@ -48,6 +50,21 @@ func _ready() -> void:
 	_scan_sheet()
 	powers.stop_cost_paid.connect(_on_stop_cost_paid)
 	powers.mode_changed.connect(_on_mode_changed)
+	powers.activation_denied.connect(_on_activation_denied)
+
+
+# Sin energía suficiente (o en sobrecarga): la espina parpadea en rojo dos
+# veces y salta una chispa de la lente, para que se note que no funcionó
+func _on_activation_denied() -> void:
+	_denied = DENIED_TIME
+	var pixels: Array = _lens.get(sprite.frame, [])
+	if not pixels.is_empty():
+		var at: Vector2 = _to_local_px(pixels[pixels.size() / 2])
+		for i in 5:
+			_sparks.append({
+				pos = at, vel = Vector2.from_angle(randf() * TAU) * randf_range(20.0, 45.0),
+				life = randf_range(0.12, 0.25), max = 0.25,
+			})
 
 
 func _on_mode_changed(mode: TimePowers.Mode) -> void:
@@ -62,6 +79,7 @@ func _process(delta: float) -> void:
 		if _flash[key] <= 0.0:
 			_flash.erase(key)
 	_reticle = maxf(_reticle - real_delta, 0.0)
+	_denied = maxf(_denied - real_delta, 0.0)
 	_update_particles(_sparks, real_delta, 0.0)
 	_update_particles(_smoke, real_delta, -8.0)
 	if powers.is_overloaded():
@@ -101,6 +119,9 @@ func _draw_spine() -> void:
 		var color: Color
 		if powers.is_overloaded():
 			color = OVERLOAD if blink else OVERLOAD_DIM
+		elif _denied > 0.0:
+			var on := int((DENIED_TIME - _denied) / 0.1) % 2 == 0
+			color = OVERLOAD if on else OVERLOAD_DIM
 		elif _flash.has(i):
 			color = SPARK
 		else:

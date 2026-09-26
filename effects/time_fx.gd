@@ -49,9 +49,15 @@ var _trail := false
 var _trail_timer := 0.0
 var _trail_index := 0
 var _last_trail_pos := Vector2.INF
+## Posición del jugador en los dos últimos pasos de física, para ubicar la
+## estela donde se dibuja el gato (que está interpolado entre ambos)
+var _phys_prev := Vector2.ZERO
+var _phys_cur := Vector2.ZERO
 
 
 func _ready() -> void:
+	_phys_prev = owner.global_position
+	_phys_cur = _phys_prev
 	process_mode = PROCESS_MODE_ALWAYS
 	# El filtro se dibuja en el mundo (no en un CanvasLayer) para que el gato
 	# y su estela (z_index = PLAYER_Z) queden encima y conserven sus colores.
@@ -135,6 +141,11 @@ func _on_deactivated() -> void:
 	_rect.visible = mode != TimePowers.Mode.NONE
 
 
+func _physics_process(_delta: float) -> void:
+	_phys_prev = _phys_cur
+	_phys_cur = owner.global_position
+
+
 func _process(delta: float) -> void:
 	if _rect.visible:
 		_update_center()
@@ -175,11 +186,15 @@ func _spawn_afterimage() -> void:
 	ghost.modulate = color
 	ghost.z_index = PLAYER_Z
 	ghost.process_mode = PROCESS_MODE_ALWAYS
+	# La copia no se mueve: sin interpolación, y ubicada donde se ve el gato
+	ghost.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var drawn := _phys_prev.lerp(_phys_cur, Engine.get_physics_interpolation_fraction())
+	var at: Vector2 = drawn + (sprite.global_position - owner.global_position)
 	_trail_index += 1
 	# Justo antes del jugador en el árbol: se dibuja detrás del gato
 	owner.add_sibling(ghost)
 	owner.get_parent().move_child(ghost, owner.get_index())
-	ghost.global_position = sprite.global_position
+	ghost.global_position = at
 	var fade := ghost.create_tween().set_ignore_time_scale(true)
 	fade.tween_property(ghost, "modulate:a", 0.0, TRAIL_LIFETIME)
 	fade.tween_callback(ghost.queue_free)

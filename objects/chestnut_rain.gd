@@ -7,6 +7,7 @@ extends Node2D
 
 const HAZARD := preload("res://objects/hazard.gd")
 const TEXTURE := preload("res://objects/spike_ball.png")
+const SPIN := 9.0 ## radianes por segundo del mundo (la Q también los frena)
 
 @export var columns := 3
 @export var column_spacing := 16.0
@@ -38,15 +39,15 @@ func _ready() -> void:
 			ball.set_meta("index", i)
 			add_child(ball)
 			_balls.append(ball)
-	_place()
+	_place(0.0)
 
 
 func _physics_process(delta: float) -> void:
 	_t += delta
-	_place()
+	_place(delta)
 
 
-func _place() -> void:
+func _place(delta: float) -> void:
 	var span := bottom - top
 	for ball in _balls:
 		var c: int = ball.get_meta("column")
@@ -54,5 +55,10 @@ func _place() -> void:
 		var x := (c - (columns - 1) / 2.0) * column_spacing
 		# Columnas desfasadas medio espacio para que la cortina no tenga huecos alineados
 		var y := top + fposmod(_t * fall_speed + i * spacing + c * spacing * 0.5, span)
+		var wrapped := y < ball.position.y
 		ball.position = Vector2(x, y)
-		ball.get_child(1).rotation += 0.15
+		# Al pasar de abajo a arriba es un teletransporte: sin interpolar el
+		# trayecto (si no, se vería un cuadro a mitad de camino)
+		if wrapped or delta == 0.0:
+			ball.reset_physics_interpolation()
+		ball.get_child(1).rotation += SPIN * delta
