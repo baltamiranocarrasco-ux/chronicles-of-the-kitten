@@ -20,6 +20,14 @@ var state := State.NORMAL
 var idle_time := 0.0
 var sliding := false
 var slide_cooldown := 0.0
+## Desplazamiento del sprite mientras da vueltas antes de dormir (lo anima
+## "settle"). Es solo visual: el cuerpo no se mueve. Mirando a la izquierda
+## se invierte, igual que el dibujo.
+var settle_offset := 0.0:
+	set(value):
+		settle_offset = value
+		if is_node_ready():
+			sprite2D.position.x = value * (-1.0 if sprite2D.flip_h else 1.0)
 
 @onready var animationplayer = $AnimationPlayer
 @onready var sprite2D = $Sprite2D
@@ -135,6 +143,8 @@ func _any_action_pressed() -> bool:
 func _set_state(new_state: State) -> void:
 	state = new_state
 	idle_time = 0.0
+	if state != State.SETTLING:
+		settle_offset = 0.0
 	match state:
 		State.SETTLING:
 			animationplayer.play("settle")

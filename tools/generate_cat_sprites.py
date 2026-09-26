@@ -7,9 +7,11 @@ El dibujo está en tools/cyber_cat.py. Hoja de 8 columnas x 7 filas, cuadros
 de 32x32, gato mirando a la derecha:
   fila 0: idle (8)        fila 1: run (8)
   fila 2: jump (4) + fall (4)
-  fila 3: vistas para girar: lado, 2 intermedias, frente, 2 intermedias,
-          lado opuesto, espalda
+  fila 3: vistas para dar vueltas: lado, 3/4 hacia la cámara, frente,
+          3/4 al otro lado, 3/4 de espaldas, espalda, 3/4 de espaldas al
+          otro lado, lado opuesto
   fila 4: acostarse (7)   fila 5: dormir (8)   fila 6: enojo (8)
+  fila 7: caminar a la derecha (4) y a la izquierda (4)
 
 Además reescribe las animaciones de scenes/player.tscn según ANIMATIONS,
 para que la hoja y las animaciones siempre coincidan.
@@ -22,7 +24,7 @@ from PIL import Image
 
 from cyber_cat import FRAME, sheet_rows
 
-COLS, ROWS = 8, 7
+COLS, ROWS = 8, 8
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "assets" / "cat"
@@ -36,10 +38,32 @@ def _row(r, cols, duration):
     return [(r * COLS + c, duration) for c in cols]
 
 
-def _turn_circle(duration):
-    # lado, intermedias, frente, intermedias, lado opuesto, intermedias, espalda, intermedias
-    order = [0, 1, 2, 3, 4, 5, 6, 5, 4, 7, 2, 1]
-    return [(3 * COLS + c, duration) for c in order]
+def _settle():
+    """Da dos vueltas antes de acostarse, desplazándose de verdad: camina a la
+    derecha, gira hacia la cámara, vuelve caminando a la izquierda, se da la
+    vuelta de espaldas y regresa al punto de partida. Cada clave lleva el
+    desplazamiento horizontal del sprite (Player.settle_offset)."""
+    turn = 3 * COLS
+    walk_r = [7 * COLS + c for c in range(4)]
+    walk_l = [7 * COLS + 4 + c for c in range(4)]
+    keys, x = [], 0.0
+
+    def add(frames, step, duration):
+        nonlocal x
+        for f in frames:
+            keys.append((f, duration, round(x)))
+            x += step
+
+    for _ in range(2):
+        add(walk_r, 1.25, 0.1)                          # 0 -> +5
+        add([turn + 1, turn + 2, turn + 3], 0, 0.12)    # gira hacia la cámara
+        add(walk_l + walk_l, -1.25, 0.1)                # +5 -> -5
+        add([turn + 4, turn + 5, turn + 6], 0, 0.12)    # gira de espaldas
+        add(walk_r, 1.25, 0.1)                          # -5 -> 0
+    add([turn], 0, 0.1)
+    for c, d in [(0, 0.1), (1, 0.1), (2, 0.1), (3, 0.3), (4, 0.2), (5, 0.2), (6, 0.3)]:
+        add([4 * COLS + c], 0, d)
+    return keys
 
 
 ANIMATIONS = {
@@ -47,9 +71,7 @@ ANIMATIONS = {
     "run": (True, _row(1, range(8), 1 / 13)),
     "jump": (False, _row(2, range(4), 1 / 12)),
     "fall": (True, _row(2, range(4, 8), 1 / 10)),
-    "settle": (False, _turn_circle(0.07) + _turn_circle(0.07) + [(3 * COLS, 0.1)]
-               + [(4 * COLS + c, d) for c, d in
-                  [(0, 0.1), (1, 0.1), (2, 0.1), (3, 0.3), (4, 0.2), (5, 0.2), (6, 0.3)]]),
+    "settle": (False, _settle()),
     "sleep": (True, _row(5, range(8), 1 / 5)),
     # Reutiliza el gato agachado de "acostarse" (sin cuadros nuevos)
     "slide": (False, [(4 * COLS + 1, 0.05), (4 * COLS + 2, 0.5)]),
@@ -61,11 +83,13 @@ ANIMATIONS = {
 
 def _animation_resource(name, loop, keys):
     times, t = [], 0.0
-    for _, duration in keys:
+    for key in keys:
         times.append(round(t, 4))
-        t += duration
-    values = ", ".join(str(f) for f, _ in keys)
-    return f"""[sub_resource type="Animation" id="Animation_{name}"]
+        t += key[1]
+    times_str = ", ".join(str(x) for x in times)
+    transitions = ", ".join("1" for _ in keys)
+    values = ", ".join(str(k[0]) for k in keys)
+    text = f"""[sub_resource type="Animation" id="Animation_{name}"]
 resource_name = "{name}"
 length = {round(t, 4)}
 loop_mode = {1 if loop else 0}
@@ -77,13 +101,28 @@ tracks/0/path = NodePath("Sprite2D:frame")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {{
-"times": PackedFloat32Array({", ".join(str(x) for x in times)}),
-"transitions": PackedFloat32Array({", ".join("1" for _ in keys)}),
+"times": PackedFloat32Array({times_str}),
+"transitions": PackedFloat32Array({transitions}),
 "update": 1,
 "values": [{values}]
 }}
-
 """
+    if len(keys[0]) > 2:
+        offsets = ", ".join(f"{float(k[2])}" for k in keys)
+        text += f"""tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:settle_offset")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {{
+"times": PackedFloat32Array({times_str}),
+"transitions": PackedFloat32Array({transitions}),
+"update": 1,
+"values": [{offsets}]
+}}
+"""
+    return text + "\n"
 
 
 def update_player_scene():
