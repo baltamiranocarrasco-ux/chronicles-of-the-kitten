@@ -33,7 +33,8 @@ const ADS := [
 ]
 const RECALL := 5
 const CAT_SHEET := preload("res://assets/cat/cat_sheet.png")
-const CAT_FRAME := Rect2i(0, 0, 32, 32)
+const CAT_COLS := 8 ## columnas de la hoja del gato (el primer cuadro es el reposo)
+const CARD := 96 ## lado de la tarjeta holográfica del gato, en píxeles de textura
 
 ## Tipografía vectorial angular (rejilla de 4x6, trazos)
 const FONT := {
@@ -433,7 +434,7 @@ func _draw_recall(center: Vector2, time: float, unfold: float, flicker: float, c
 	var turn := cos(time * SPIN * 1.3)
 	var sx := signf(turn) * maxf(absf(turn), 0.08)
 	draw_set_transform(center + Vector2(0, -2), 0.0, Vector2(sx, unfold) / 3.0)
-	draw_texture(_cat_holo, Vector2(-48, -48), Color(col, 0.95 * flicker))
+	draw_texture(_cat_holo, -Vector2(CARD, CARD) / 2.0, Color(col, 0.95 * flicker))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 	if int(time * 3.0) % 3 != 0:
 		var h := 10.0 * unfold
@@ -442,26 +443,29 @@ func _draw_recall(center: Vector2, time: float, unfold: float, flicker: float, c
 
 
 func _make_cat_hologram() -> ImageTexture:
-	# Silueta del gato con bordes marcados, ampliada x3 (para que se vea nítida
-	# con el filtrado suave del fondo) y con líneas de barrido
+	# Silueta del gato con bordes marcados y líneas de barrido, a CARD px de
+	# lado (el pixel art se amplía, el gato en alta resolución se usa tal cual)
+	# para que se vea nítida con el filtrado suave del fondo
 	var src := CAT_SHEET.get_image()
 	if src.is_compressed():
 		src.decompress()
-	src = src.get_region(CAT_FRAME)
-	var img := Image.create(CAT_FRAME.size.x * 3, CAT_FRAME.size.y * 3, false, Image.FORMAT_RGBA8)
-	for y in CAT_FRAME.size.y:
-		for x in CAT_FRAME.size.x:
-			if src.get_pixel(x, y).a < 0.5:
+	var frame := src.get_width() / CAT_COLS
+	src = src.get_region(Rect2i(0, 0, frame, frame))
+	src.resize(CARD, CARD, Image.INTERPOLATE_NEAREST if frame < CARD else Image.INTERPOLATE_BILINEAR)
+	var edge_step := CARD / 32
+	var img := Image.create(CARD, CARD, false, Image.FORMAT_RGBA8)
+	for y in CARD:
+		for x in CARD:
+			var p := src.get_pixel(x, y)
+			if p.a < 0.5:
 				continue
 			var edge := false
-			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			for d in [Vector2i(edge_step, 0), Vector2i(-edge_step, 0), Vector2i(0, edge_step), Vector2i(0, -edge_step)]:
 				var n: Vector2i = Vector2i(x, y) + d
-				if n.x < 0 or n.y < 0 or n.x >= CAT_FRAME.size.x or n.y >= CAT_FRAME.size.y or src.get_pixelv(n).a < 0.5:
+				if n.x < 0 or n.y < 0 or n.x >= CARD or n.y >= CARD or src.get_pixelv(n).a < 0.5:
 					edge = true
-			var a := 1.0 if edge else clampf(0.3 + src.get_pixel(x, y).get_luminance() * 1.5, 0.3, 1.0)
-			for sy in 3:
-				for sx in 3:
-					img.set_pixel(x * 3 + sx, y * 3 + sy, Color(1, 1, 1, a * (0.5 if sy == 2 else 1.0)))
+			var a := 1.0 if edge else clampf(0.3 + p.get_luminance() * 1.5, 0.3, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * (0.5 if y % 3 == 2 else 1.0)))
 	return ImageTexture.create_from_image(img)
 
 

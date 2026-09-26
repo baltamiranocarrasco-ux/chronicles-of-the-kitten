@@ -1,10 +1,12 @@
-"""Genera el sprite sheet del gato cíborg (pixel art) usado por player.tscn.
+"""Genera el sprite sheet del gato usado por player.tscn.
 
-Uso:  python3 tools/generate_cat_sprites.py
-Requiere Pillow (pip install pillow).
+Uso:  python3 tools/generate_cat_sprites.py           gato ilustrado en alta resolución
+      python3 tools/generate_cat_sprites.py --pixel   gato en pixel art (versión anterior)
+Requiere Pillow y numpy (pip install pillow numpy).
 
-El dibujo está en tools/cyber_cat.py. Hoja de 8 columnas x 7 filas, cuadros
-de 32x32, gato mirando a la derecha:
+El dibujo está en tools/hd_cat.py (cuadros de 96x96, que el juego muestra a
+escala 1/3 con filtrado suave) o en tools/cyber_cat.py (pixel art de 32x32).
+Hoja de 8 columnas x 8 filas, gato mirando a la derecha:
   fila 0: idle (8)        fila 1: run (8)
   fila 2: jump (4) + fall (4)
   fila 3: vistas para dar vueltas: lado, 3/4 hacia la cámara, frente,
@@ -18,13 +20,16 @@ para que la hoja y las animaciones siempre coincidan.
 """
 
 import re
+import sys
 from pathlib import Path
 
 from PIL import Image
 
-from cyber_cat import FRAME, sheet_rows
+import cyber_cat
+import hd_cat
 
 COLS, ROWS = 8, 8
+GAME_FRAME = 32  ## tamaño del cuadro en píxeles del juego
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "assets" / "cat"
@@ -125,7 +130,7 @@ tracks/1/keys = {{
     return text + "\n"
 
 
-def update_player_scene():
+def update_player_scene(sprite_scale):
     path = ROOT / "scenes" / "player.tscn"
     text = path.read_text()
     for name, (loop, keys) in ANIMATIONS.items():
@@ -139,32 +144,37 @@ def update_player_scene():
             text = text.replace('[sub_resource type="AnimationLibrary"',
                                 _animation_resource(name, loop, keys) + '[sub_resource type="AnimationLibrary"', 1)
             text = text.replace('_data = {\n', f'_data = {{\n&"{name}": SubResource("Animation_{name}"),\n', 1)
-    text = re.sub(r"hframes = \d+\nvframes = \d+", f"hframes = {COLS}\nvframes = {ROWS}", text)
+    # Nodo Sprite2D: escala 1/3 y filtrado suave para el gato en alta resolución
+    hd = sprite_scale != 1.0
+    sprite = ('[node name="Sprite2D" type="Sprite2D" parent="."]\n'
+              + ("texture_filter = 2\n" if hd else "")
+              + "z_index = 1\n"
+              + ("scale = Vector2(%g, %g)\n" % (sprite_scale, sprite_scale) if hd else "")
+              + 'texture = ExtResource("2_sheet")\n'
+              + f"hframes = {COLS}\nvframes = {ROWS}\n")
+    text, count = re.subn(r'\[node name="Sprite2D" type="Sprite2D" parent="\."\]\n.*?\n\n', sprite + "\n", text,
+                          count=1, flags=re.S)
+    assert count == 1, "No encontré el nodo Sprite2D en player.tscn"
     path.write_text(text)
     print(f"Actualizado {path}")
 
 
-def write_icon(px):
-    """Escribe icon.svg (128x128) con el primer cuadro de idle en pixel art."""
-    xs = [x for x, _ in px]
-    ys = [y for _, y in px]
-    # Centrar el gato dentro del lienzo de 32x32
-    ox = (FRAME - (max(xs) - min(xs) + 1)) // 2 - min(xs)
-    oy = (FRAME - (max(ys) - min(ys) + 1)) // 2 - min(ys)
+def write_icon(frame):
+    """Escribe icon.svg (128x128) con el primer cuadro de reposo, reducido a
+    una rejilla de 32x32."""
+    img = frame.resize((GAME_FRAME, GAME_FRAME), Image.LANCZOS) if frame.width != GAME_FRAME else frame
+    box = img.getbbox()
+    ox = (GAME_FRAME - (box[2] - box[0])) // 2 - box[0]
+    oy = (GAME_FRAME - (box[3] - box[1])) // 2 - box[1]
     rects = []
-    for y in range(FRAME):
-        x = 0
-        while x < FRAME:
-            color = px.get((x, y))
-            if color is None:
-                x += 1
+    for y in range(GAME_FRAME):
+        for x in range(GAME_FRAME):
+            r, g, b, a = img.getpixel((x, y))
+            if a < 40:
                 continue
-            start = x
-            while px.get((x, y)) == color:
-                x += 1
-            hexc = "#%02x%02x%02x" % color[:3]
-            rects.append(f'<rect x="{(start + ox) * 4}" y="{(y + oy) * 4}" '
-                         f'width="{(x - start) * 4}" height="4" fill="{hexc}"/>')
+            opacity = "" if a > 245 else f' fill-opacity="{a / 255:.2f}"'
+            rects.append(f'<rect x="{(x + ox) * 4}" y="{(y + oy) * 4}" width="4" height="4" '
+                         f'fill="#{r:02x}{g:02x}{b:02x}"{opacity}/>')
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" '
         'viewBox="0 0 128 128" shape-rendering="crispEdges">\n'
@@ -176,20 +186,30 @@ def write_icon(px):
     print(f"Guardado {out}")
 
 
+def _pixel_image(px):
+    img = Image.new("RGBA", (GAME_FRAME, GAME_FRAME), (0, 0, 0, 0))
+    for (x, y), color in px.items():
+        img.putpixel((x, y), color)
+    return img
+
+
 def main():
-    sheet = Image.new("RGBA", (FRAME * COLS, FRAME * ROWS), (0, 0, 0, 0))
-    rows = sheet_rows()
+    pixel = "--pixel" in sys.argv
+    rows = cyber_cat.sheet_rows() if pixel else hd_cat.sheet_rows()
+    if pixel:
+        rows = [[_pixel_image(px) for px in r] for r in rows]
+    frame = rows[0][0].width
+    sheet = Image.new("RGBA", (frame * COLS, frame * ROWS), (0, 0, 0, 0))
     for r, frames in enumerate(rows):
         assert len(frames) <= COLS, f"fila {r} con {len(frames)} cuadros"
-        for col, px in enumerate(frames):
-            for (x, y), color in px.items():
-                sheet.putpixel((col * FRAME + x, r * FRAME + y), color)
+        for col, img in enumerate(frames):
+            sheet.alpha_composite(img, (col * frame, r * frame))
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / "cat_sheet.png"
     sheet.save(out)
-    print(f"Guardado {out}")
+    print(f"Guardado {out} ({'pixel art' if pixel else 'alta resolución'}, cuadros de {frame}x{frame})")
     write_icon(rows[0][0])
-    update_player_scene()
+    update_player_scene(GAME_FRAME / frame)
 
 
 if __name__ == "__main__":

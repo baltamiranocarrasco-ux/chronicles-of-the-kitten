@@ -108,7 +108,7 @@ func _draw_spine() -> void:
 			var fill := clampf((powers.energy - (BLOCKS - 1 - i) * per_block) / per_block, 0.0, 1.0)
 			color = OFF.lerp(lit, fill)
 		for px in groups[i]:
-			draw_rect(Rect2(_to_local_px(px), Vector2.ONE), color)
+			draw_rect(Rect2(_to_local_px(px), _px_size()), color)
 
 
 func _draw_lens() -> void:
@@ -116,13 +116,13 @@ func _draw_lens() -> void:
 	if pixels.is_empty() or (powers.mode == TimePowers.Mode.NONE and _reticle <= 0.0):
 		return
 	for px in pixels:
-		draw_rect(Rect2(_to_local_px(px), Vector2.ONE), LENS_ON)
+		draw_rect(Rect2(_to_local_px(px), _px_size()), LENS_ON)
 	if _reticle <= 0.0:
 		return
 	# Haz y retícula flotante frente al ojo
 	var a := _reticle / RETICLE_TIME
 	var dir := -1.0 if sprite.flip_h else 1.0
-	var eye: Vector2 = _to_local_px(pixels[0]) + Vector2(0.5, 0.5)
+	var eye: Vector2 = _to_local_px(pixels[pixels.size() / 2]) + _px_size() / 2.0
 	for d in range(2, 9, 2):
 		draw_rect(Rect2(eye + Vector2(dir * d - 0.5, -0.5), Vector2.ONE), Color(LENS_ON, a * 0.8))
 	var c := eye + Vector2(dir * 11, 0)
@@ -137,8 +137,14 @@ func _scan_sheet() -> void:
 	var image := sprite.texture.get_image()
 	if image.is_compressed():
 		image.decompress()
-	var fw := image.get_width() / sprite.hframes
+	image.convert(Image.FORMAT_RGBA8)
+	var data := image.get_data()
+	var width := image.get_width()
+	var fw := width / sprite.hframes
 	var fh := image.get_height() / sprite.vframes
+	var spine_key := _key(SPINE_KEY)
+	var neck_key := _key(SPINE_NECK)
+	var lens_key := _key(LENS_KEY)
 	for frame in sprite.hframes * sprite.vframes:
 		var ox := (frame % sprite.hframes) * fw
 		var oy := (frame / sprite.hframes) * fh
@@ -146,18 +152,26 @@ func _scan_sheet() -> void:
 		var neck := Vector2i(-1, -1)
 		var lens: Array[Vector2i] = []
 		for y in fh:
+			var row := ((oy + y) * width + ox) * 4
 			for x in fw:
-				var c := image.get_pixel(ox + x, oy + y)
-				if _same(c, SPINE_NECK):
+				var i := row + x * 4
+				if data[i + 3] < 128:
+					continue
+				var c := (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
+				if c == neck_key:
 					neck = Vector2i(x, y)
 					spine.append(neck)
-				elif _same(c, SPINE_KEY):
+				elif c == spine_key:
 					spine.append(Vector2i(x, y))
-				elif _same(c, LENS_KEY):
+				elif c == lens_key:
 					lens.append(Vector2i(x, y))
 		_lens[frame] = lens
 		if spine.size() >= BLOCKS:
 			_spine[frame] = _split_spine(spine, neck)
+
+
+func _key(c: Color) -> int:
+	return (c.r8 << 16) | (c.g8 << 8) | c.b8
 
 
 func _split_spine(pixels: Array[Vector2i], neck: Vector2i) -> Array:
@@ -173,15 +187,17 @@ func _split_spine(pixels: Array[Vector2i], neck: Vector2i) -> Array:
 	return groups
 
 
-func _same(c: Color, key: Color) -> bool:
-	return c.a > 0.5 and absf(c.r - key.r) < 0.004 and absf(c.g - key.g) < 0.004 and absf(c.b - key.b) < 0.004
-
-
+# Posición local (respecto al jugador) de un píxel de la hoja en el cuadro
+# actual; funciona con cualquier escala del sprite (pixel art o alta resolución)
 func _to_local_px(px: Vector2i) -> Vector2:
 	var fw := sprite.texture.get_width() / sprite.hframes
 	var fh := sprite.texture.get_height() / sprite.vframes
 	var x := fw - 1 - px.x if sprite.flip_h else px.x
-	return Vector2(x, px.y) - Vector2(fw, fh) / 2.0 + sprite.offset + sprite.position
+	return (Vector2(x, px.y) - Vector2(fw, fh) / 2.0 + sprite.offset) * sprite.scale + sprite.position
+
+
+func _px_size() -> Vector2:
+	return sprite.scale
 
 
 # --- efectos -----------------------------------------------------------------
@@ -196,7 +212,7 @@ func _on_stop_cost_paid(before: float, after: float) -> void:
 			_flash[i] = 0.12
 			for px in groups[i]:
 				_sparks.append({
-					pos = _to_local_px(px) + Vector2(0.5, 0.5),
+					pos = _to_local_px(px) + _px_size() / 2.0,
 					vel = Vector2.from_angle(randf() * TAU) * randf_range(25.0, 60.0),
 					life = randf_range(0.15, 0.35), max = 0.35,
 				})

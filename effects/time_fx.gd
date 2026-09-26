@@ -167,6 +167,8 @@ func _spawn_afterimage() -> void:
 	ghost.flip_h = sprite.flip_h
 	ghost.centered = sprite.centered
 	ghost.offset = sprite.offset
+	ghost.scale = sprite.scale
+	ghost.texture_filter = sprite.texture_filter
 	ghost.material = AFTERIMAGE_MATERIAL
 	var color := TRAIL_COLORS[_trail_index % TRAIL_COLORS.size()]
 	color.a = TRAIL_ALPHA
