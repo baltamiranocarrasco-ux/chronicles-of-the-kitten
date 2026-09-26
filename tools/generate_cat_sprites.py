@@ -149,6 +149,9 @@ def update_player_scene(sprite_scale):
     sprite = ('[node name="Sprite2D" type="Sprite2D" parent="."]\n'
               + ("texture_filter = 2\n" if hd else "")
               + "z_index = 1\n"
+              # La posición del sprite la anima "settle" fuera del paso de
+              # física: no se interpola (el cuerpo del gato sí)
+              + "physics_interpolation_mode = 2\n"
               + ("scale = Vector2(%g, %g)\n" % (sprite_scale, sprite_scale) if hd else "")
               + 'texture = ExtResource("2_sheet")\n'
               + f"hframes = {COLS}\nvframes = {ROWS}\n")

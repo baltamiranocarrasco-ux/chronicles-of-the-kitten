@@ -255,7 +255,7 @@ func build_background(level: Node) -> void:
 		s.scale = Vector2.ONE / BG_DETAIL
 		# Cada capa se repite a su propio ancho (las de ciudad miden dos pantallas)
 		p.repeat_size = Vector2(s.texture.get_width() / BG_DETAIL, 0)
-		p.repeat_times = 3
+		p.repeat_times = 1 # las capas miden al menos una pantalla: basta una copia a cada lado
 		s.centered = false
 		s.position = Vector2(0, VIEW_TOP)
 		s.material = BG_MATERIAL

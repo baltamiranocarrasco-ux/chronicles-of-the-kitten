@@ -110,14 +110,15 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	# Sin copias a los lados: el Parallax2D ya repite la capa cada
+	# layer_width. Solo se dibujan los hologramas cerca de la cámara (en
+	# cualquiera de las repeticiones).
 	var cam := get_viewport().get_camera_2d()
 	var cam_x := cam.get_screen_center_position().x if cam else 0.0
-	for copy in [-layer_width, 0.0, layer_width]:
-		for spot in _spots:
-			var shift := Vector2(copy, 0)
-			if absf(to_global(spot.pos + shift).x - cam_x) > 192.0 + CULL:
-				continue
-			_draw_hologram(spot, shift)
+	for spot in _spots:
+		var dx := wrapf(to_global(spot.pos).x - cam_x, -layer_width / 2.0, layer_width / 2.0)
+		if absf(dx) <= 192.0 + CULL:
+			_draw_hologram(spot, Vector2.ZERO)
 
 
 func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:

@@ -8,7 +8,7 @@ extends Node2D
 ##   RAIN   : lluvia fina en diagonal
 ## Las posiciones de ventanas y conductos vienen de assets/city/city_meta.gd.
 ## Con la Q activa, drones y tráfico dejan una estela más larga.
-## Se dibuja en la copia vecina de cada lado para repetirse igual que la capa.
+## El Parallax2D de la capa lo repite cada layer_width, igual que la imagen.
 
 enum Kind { LIGHTS, DRONES, TRAFFIC, SMOKE, RAIN }
 
@@ -31,6 +31,7 @@ var _puffs := [] ## {pos, vel, age, life, size}
 var _drops := [] ## {pos, speed, len}
 var _spawn := 0.0
 var _rnd := RandomNumberGenerator.new()
+var _soft: GradientTexture2D ## mancha difusa para el humo
 
 
 func _ready() -> void:
@@ -53,6 +54,16 @@ func _ready() -> void:
 							speed = _rnd.randf_range(60, 110) * dir, len = _rnd.randf_range(2.0, 3.5),
 							color = TAIL[_rnd.randi() % TAIL.size()]})
 		Kind.SMOKE:
+			var g := Gradient.new()
+			g.set_color(0, Color(1, 1, 1, 1))
+			g.set_color(1, Color(1, 1, 1, 0))
+			_soft = GradientTexture2D.new()
+			_soft.gradient = g
+			_soft.fill = GradientTexture2D.FILL_RADIAL
+			_soft.fill_from = Vector2(0.5, 0.5)
+			_soft.fill_to = Vector2(1.0, 0.5)
+			_soft.width = 32
+			_soft.height = 32
 			# Estado inicial ya en marcha para que no arranque sin humo
 			for i in 60:
 				_step_smoke(0.1)
@@ -79,7 +90,7 @@ func _process(delta: float) -> void:
 func _step_smoke(delta: float) -> void:
 	_spawn -= delta
 	if _spawn <= 0.0:
-		_spawn = 0.12
+		_spawn = 0.25
 		for v in META.VENTS:
 			_puffs.append({pos = Vector2(v[0], v[1]), vel = Vector2(_rnd.randf_range(1.5, 4.0), -_rnd.randf_range(7.0, 11.0)),
 					age = 0.0, life = _rnd.randf_range(3.0, 4.5), size = _rnd.randf_range(1.5, 2.5)})
@@ -94,33 +105,41 @@ func _step_smoke(delta: float) -> void:
 
 
 func _draw() -> void:
-	for copy in [-layer_width, 0.0, layer_width]:
-		var shift := Vector2(copy, 0)
-		match kind:
-			Kind.LIGHTS:
-				for w in _windows:
-					# Se apagan un rato de vez en cuando, con transición suave
-					var s := sin(_t * TAU / w.period + w.phase)
-					var off := clampf((s - 0.55) / 0.3, 0.0, 1.0)
-					if off > 0.0:
-						draw_rect(Rect2(w.rect.position + shift, w.rect.size), Color(WINDOW_OFF, off * 0.92))
-			Kind.DRONES, Kind.TRAFFIC:
-				var trail := 4.0 if Engine.time_scale < 1.0 else 1.0
-				for m in _movers:
-					var back := -signf(m.speed)
-					var base := Vector2(m.x, m.y) + shift
-					var length: float = m.len * trail
-					draw_line(base, base + Vector2(back * length, 0), Color(m.color, 0.9), 0.6, true)
-					if kind == Kind.TRAFFIC:
-						draw_circle(base + Vector2(-back * 0.4, 0), 0.4, HEADLIGHT, true, -1.0, true)
-					elif int(_t * 2.0 + m.x) % 2 == 0:
-						draw_circle(base, 0.8, Color(DRONE, 0.35), true, -1.0, true)
-			Kind.SMOKE:
-				for p in _puffs:
-					var k: float = p.age / p.life
-					var radius: float = p.size + k * 5.0
-					var alpha := 0.08 * (1.0 - k) * minf(1.0, p.age * 3.0)
-					draw_circle(p.pos + shift, radius, Color(SMOKE, alpha), true, -1.0, true)
-			Kind.RAIN:
-				for d in _drops:
-					draw_line(d.pos + shift, d.pos + shift + RAIN_DIR * d.len, Color(RAIN, 0.14), 0.3, true)
+	# Sin copias a los lados: el Parallax2D ya repite la capa (y sus hijos)
+	# cada layer_width. Todo va en lotes y sin antialias para que sea barato.
+	match kind:
+		Kind.LIGHTS:
+			for w in _windows:
+				# Se apagan un rato de vez en cuando, con transición suave
+				var s := sin(_t * TAU / w.period + w.phase)
+				var off := clampf((s - 0.55) / 0.3, 0.0, 1.0)
+				if off > 0.0:
+					draw_rect(w.rect, Color(WINDOW_OFF, off * 0.92))
+		Kind.DRONES, Kind.TRAFFIC:
+			var trail := 4.0 if Engine.time_scale < 1.0 else 1.0
+			var lines := PackedVector2Array()
+			var colors := PackedColorArray()
+			for m in _movers:
+				var back := -signf(m.speed)
+				var base := Vector2(m.x, m.y)
+				lines.append(base)
+				lines.append(base + Vector2(back * m.len * trail, 0))
+				colors.append(Color(m.color, 0.9))
+				if kind == Kind.TRAFFIC:
+					draw_rect(Rect2(base + Vector2(-back * 0.2 - 0.3, -0.3), Vector2(0.6, 0.6)), HEADLIGHT)
+				elif int(_t * 2.0 + m.x) % 2 == 0:
+					draw_rect(Rect2(base - Vector2(0.8, 0.8), Vector2(1.6, 1.6)), Color(DRONE, 0.3))
+			draw_multiline_colors(lines, colors, 0.6)
+		Kind.SMOKE:
+			for p in _puffs:
+				var k: float = p.age / p.life
+				var radius: float = p.size + k * 5.0
+				var alpha := 0.1 * (1.0 - k) * minf(1.0, p.age * 3.0)
+				draw_texture_rect(_soft, Rect2(p.pos - Vector2(radius, radius), Vector2(radius, radius) * 2.0),
+						false, Color(SMOKE, alpha))
+		Kind.RAIN:
+			var lines := PackedVector2Array()
+			for d in _drops:
+				lines.append(d.pos)
+				lines.append(d.pos + RAIN_DIR * d.len)
+			draw_multiline(lines, Color(RAIN, 0.16), 0.35)

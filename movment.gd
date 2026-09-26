@@ -93,6 +93,7 @@ func _physics_process(delta: float) -> void:
 
 func respawn() -> void:
 	global_position = spawn_position
+	reset_physics_interpolation() # teletransporte: sin arrastre visual
 	velocity = Vector2.ZERO
 	sliding = false
 	_set_state(State.NORMAL)

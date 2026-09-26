@@ -184,6 +184,7 @@ script = ExtResource("1_script")
 [node name="Sprite2D" type="Sprite2D" parent="."]
 texture_filter = 2
 z_index = 1
+physics_interpolation_mode = 2
 scale = Vector2(0.333333, 0.333333)
 texture = ExtResource("2_sheet")
 hframes = 8
