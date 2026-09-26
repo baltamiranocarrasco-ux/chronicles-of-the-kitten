@@ -23,16 +23,19 @@ const RAIN := preload("res://objects/chestnut_rain.gd")
 const CRUSHER_PERIOD := 1.0
 
 const CITY_LIFE := preload("res://effects/city_life.gd")
+const HOLOGRAM_ADS := preload("res://effects/hologram_ads.gd")
+const HOLOGRAMS := 3
 const BG_MATERIAL := preload("res://effects/bg_material.tres")
 const BG_FX_MATERIAL := preload("res://effects/bg_fx_material.tres")
 
 # [nombre, textura, velocidad parallax, elementos animados [tipo, delante_de_la_capa]]
-# Tipos de effects/city_life.gd: 0 ventanas, 1 drones, 2 tráfico
+# Tipos de effects/city_life.gd: 0 ventanas, 1 drones, 2 tráfico;
+# 3 = hologramas publicitarios (effects/hologram_ads.gd)
 const PARALLAX_LAYERS := [
 	["Sky", "res://assets/city/bg_0_sky.png", 0.0, []],
 	["FarCity", "res://assets/city/bg_1_far.png", 0.1, []],
 	["TowerCity", "res://assets/city/bg_2_midfar.png", 0.22, [[0, true]]],
-	["MidCity", "res://assets/city/bg_3_mid.png", 0.4, [[1, false]]],
+	["MidCity", "res://assets/city/bg_3_mid.png", 0.4, [[1, false], [3, true]]],
 	["NearCity", "res://assets/city/bg_4_near.png", 0.65, [[2, false]]],
 ]
 
@@ -265,8 +268,11 @@ func build_background(level: Node) -> void:
 
 func city_life(kind: int, texture: Texture2D) -> Node2D:
 	var n := Node2D.new()
-	n.set_script(CITY_LIFE)
-	n.set("kind", kind)
+	if kind == HOLOGRAMS:
+		n.set_script(HOLOGRAM_ADS)
+	else:
+		n.set_script(CITY_LIFE)
+		n.set("kind", kind)
 	n.set("texture", texture)
 	n.position = Vector2(0, VIEW_TOP)
 	n.material = BG_FX_MATERIAL

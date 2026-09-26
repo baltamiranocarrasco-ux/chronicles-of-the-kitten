@@ -25,8 +25,10 @@ Salida en assets/city/ (el suelo del nivel empieza en la fila 152 de la vista):
 
 Algunas ventanas de bg_2_midfar usan dos colores clave exactos
 (WINDOW_YELLOW y WINDOW_CYAN) que effects/city_life.gd busca para
-apagarlas y encenderlas; los drones y el tráfico se dibujan por código para
-que respondan a las habilidades de tiempo.
+apagarlas y encenderlas, y bg_3_mid lleva proyectores en algunas azoteas
+marcados con HOLO_KEY, donde effects/hologram_ads.gd dibuja hologramas
+publicitarios. Los drones, el tráfico y los hologramas se dibujan por código
+para que respondan a las habilidades de tiempo.
 """
 
 import math
@@ -58,6 +60,9 @@ COOL = [rgb("#dce8f4"), rgb("#b8d0ec"), rgb("#9cc4e8")]
 LED = [rgb("#5ad8f0"), rgb("#8ae0ff"), rgb("#c890ff")]
 NEON = [rgb("#ff3cc8"), rgb("#3ce6ff"), rgb("#ff5a3c"), rgb("#96ff3c"), rgb("#b45aff"), rgb("#ffd23c")]
 AVIATION = rgb("#ff3030")
+# Proyector de hologramas publicitarios: effects/hologram_ads.gd busca este
+# píxel exacto en bg_3_mid y dibuja encima el holograma que gira
+HOLO_KEY = rgb("#01fe7f")
 
 # Bruma de la ciudad: el smog refleja las luces en tonos magenta-anaranjados
 HAZE = rgb("#5a3a64")
@@ -427,7 +432,16 @@ def midfar_city(keys):
 
 # --- capa 3: edificios cercanos con escaleras de incendio y neón ---------------------
 
-def mid_city():
+def projector(cv, cx, top):
+    """Proyector de hologramas sobre una azotea (la lente es el color clave)."""
+    base = rgb("#0c0a14")
+    cv.rect(cx - 4, top - 3, 9, 3, base)
+    cv.rect(cx - 2, top - 5, 5, 2, base)
+    cv.rect(cx - 4, top - 3, 9, 1, rgb("#4a3a66"), 0.8)
+    cv.px(cx - 3, top - 2, AVIATION)
+
+
+def mid_city(holo_keys):
     cv = Canvas(CITY_W)
     rnd = random.Random(47)
     st = Style(face=rgb("#1a1628"), shade=rgb("#0f0c1a"), rim=rgb("#4a3a66"),
@@ -456,6 +470,17 @@ def mid_city():
             neon_sign(cv, x + w - 2, top + rnd.randint(10, 30), rnd.randint(14, 30), rnd)
         if rnd.random() < 0.2:
             billboard(cv, x + 4, top + rnd.randint(8, 24), min(w - 10, 26), rnd.randint(10, 16), rnd)
+    # Proyectores de hologramas en azoteas anchas, separados entre sí: el
+    # holograma flota ~55 px sobre el proyector, así que la azotea no puede
+    # estar demasiado alta
+    last = -999
+    for x, w, top, tiers in blocks:
+        tx, tw, tt = tiers[-1]
+        if tw >= 16 and 72 <= tt <= 112 and tx - last >= 200:
+            cx = tx + tw // 2
+            projector(cv, cx, tt)
+            holo_keys.append((cx, tt - 5))
+            last = tx
     cv.vfog(125, 216, FOG_LOW, 0.5)
     return cv
 
@@ -635,7 +660,12 @@ def main():
         if img.getpixel((x % CITY_W, y))[3] == 255:
             img.putpixel((x % CITY_W, y), col)
     save(img, "bg_2_midfar.png")
-    save(mid_city().image(), "bg_3_mid.png")
+    holo_keys = []
+    img = mid_city(holo_keys).image()
+    for x, y in holo_keys:
+        img.putpixel((x % CITY_W, y), HOLO_KEY)
+    print(f"Proyectores de hologramas: {holo_keys}")
+    save(img, "bg_3_mid.png")
     save(near_city().image(), "bg_4_near.png")
     save(tiles(), "tiles.png")
 
