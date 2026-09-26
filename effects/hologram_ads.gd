@@ -24,14 +24,19 @@ const PRODUCTS := [
 	["MANO PRO", "-50%"],
 	["OJO 8K", "HD"],
 	["COLUMNA NEO", "-20%"],
+	["SUJETO K-7", "DESCARTADO"], # aviso de retiro: el propio gato
 ]
+const RECALL := 5 ## índice del aviso del gato (se muestra en rojo)
+const RECALL_COLOR := Color(1.0, 0.22, 0.2)
+const CAT_SHEET := preload("res://assets/cat/cat_sheet.png")
+const CAT_FRAME := Rect2i(0, 0, 32, 32) ## primer cuadro de reposo
 
 ## Fuente de 3x5 para los letreros (cada fila son 3 bits)
 const FONT := {
 	"A": [7, 5, 7, 5, 5], "B": [6, 5, 6, 5, 6], "C": [7, 4, 4, 4, 7], "D": [6, 5, 5, 5, 6],
 	"E": [7, 4, 6, 4, 7], "H": [5, 5, 7, 5, 5], "I": [7, 2, 2, 2, 7], "J": [1, 1, 1, 5, 7], "K": [5, 5, 6, 5, 5],
 	"L": [4, 4, 4, 4, 7], "M": [5, 7, 5, 5, 5], "N": [6, 5, 5, 5, 5], "O": [7, 5, 5, 5, 7],
-	"P": [7, 5, 7, 4, 4], "R": [7, 5, 6, 5, 5], "U": [5, 5, 5, 5, 7], "V": [5, 5, 5, 5, 2],
+	"P": [7, 5, 7, 4, 4], "R": [7, 5, 6, 5, 5], "S": [7, 4, 7, 1, 7], "T": [7, 2, 2, 2, 2], "U": [5, 5, 5, 5, 7], "V": [5, 5, 5, 5, 2],
 	"X": [5, 5, 2, 5, 5], "Z": [7, 1, 2, 4, 7], "0": [7, 5, 5, 5, 7], "2": [7, 1, 7, 4, 7],
 	"3": [7, 1, 7, 1, 7], "5": [7, 4, 7, 1, 7], "7": [7, 1, 1, 1, 1], "8": [7, 5, 7, 5, 7],
 	"-": [0, 0, 7, 0, 0], "%": [5, 1, 2, 4, 5], " ": [0, 0, 0, 0, 0],
@@ -44,11 +49,13 @@ var _width := 384.0
 var _spots := [] ## {pos, color, offset}
 var _models := [] ## por producto: PackedVector3Array con pares de puntos (segmentos)
 var _rnd := RandomNumberGenerator.new()
+var _cat_holo: ImageTexture ## silueta del gato con bordes marcados y líneas de barrido
 
 
 func _ready() -> void:
 	_rnd.seed = 777
-	_models = [_arm(), _leg(), _hand(), _eye(), _spine()]
+	_models = [_arm(), _leg(), _hand(), _eye(), _spine(), PackedVector3Array()]
+	_cat_holo = _make_cat_hologram()
 	if texture == null:
 		return
 	_width = texture.get_width()
@@ -85,7 +92,7 @@ func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:
 	# Al cambiar de producto se aplasta en vertical y vuelve a desplegarse
 	var unfold := clampf(minf(local, SLOT - local) / SWITCH, 0.0, 1.0)
 	unfold = unfold * unfold * (3.0 - 2.0 * unfold)
-	var col: Color = spot.color
+	var col: Color = RECALL_COLOR if index == RECALL else spot.color
 	# Parpadeo leve y fallos ocasionales de la proyección
 	var flicker := 0.85 + 0.15 * sin(time * 31.0) * sin(time * 7.3)
 	var glitch := fmod(time * 0.37 + spot.offset, 3.0) < 0.08
@@ -107,6 +114,8 @@ func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:
 		ring.append(Vector2(center.x + cos(a) * 13.0, top_y + sin(a) * 2.5))
 	draw_polyline(ring, Color(col, 0.45 * flicker), -1.0)
 
+	if index == RECALL:
+		_draw_recall(center, time, unfold, flicker, col)
 	# Modelo en alambre: gira en Y, inclinado hacia la cámara; lo de atrás
 	# se ve más tenue
 	var model: PackedVector3Array = _models[index]
@@ -139,7 +148,48 @@ func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:
 	var text_a := Color(col, 0.9 * unfold * flicker)
 	_draw_text(label[0], center + Vector2(0, -30), text_a)
 	if int(time * 2.0) % 2 == 0:
-		_draw_text(label[1], center + Vector2(0, -24), Color(1.0, 0.92, 0.4, unfold * flicker))
+		var offer_color := Color(1.0, 0.92, 0.4) if index != RECALL else Color(1.0, 0.85, 0.85)
+		_draw_text(label[1], center + Vector2(0, -24), Color(offer_color, unfold * flicker))
+
+
+# Aviso de retiro: el gato del juego gira como una tarjeta holográfica roja,
+# tachado por una franja de "descartado"
+func _draw_recall(center: Vector2, time: float, unfold: float, flicker: float, col: Color) -> void:
+	var turn := cos(time * SPIN * 1.3)
+	var sx := signf(turn) * maxf(absf(turn), 0.08)
+	draw_set_transform(center + Vector2(0, -2), 0.0, Vector2(sx, unfold))
+	draw_texture(_cat_holo, Vector2(-16, -16), Color(col, 0.95 * flicker))
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+	# Franja diagonal que parpadea sobre el gato
+	if int(time * 3.0) % 3 != 0:
+		var h := 10.0 * unfold
+		draw_line(center + Vector2(-13, h), center + Vector2(13, -h), Color(col, 0.9 * flicker), -1.0)
+		draw_line(center + Vector2(-13, h + 1), center + Vector2(13, -h + 1), Color(col, 0.5 * flicker), -1.0)
+
+
+func _make_cat_hologram() -> ImageTexture:
+	var src := CAT_SHEET.get_image()
+	if src.is_compressed():
+		src.decompress()
+	src = src.get_region(CAT_FRAME)
+	var img := Image.create(CAT_FRAME.size.x, CAT_FRAME.size.y, false, Image.FORMAT_RGBA8)
+	for y in img.get_height():
+		for x in img.get_width():
+			if src.get_pixel(x, y).a < 0.5:
+				continue
+			# Bordes y detalles claros bien marcados, el relleno tenue, y una
+			# línea de barrido cada dos filas
+			var edge := false
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var n: Vector2i = Vector2i(x, y) + d
+				if n.x < 0 or n.y < 0 or n.x >= img.get_width() or n.y >= img.get_height() or src.get_pixelv(n).a < 0.5:
+					edge = true
+			var lum := src.get_pixel(x, y).get_luminance()
+			var a := 1.0 if edge else clampf(0.3 + lum * 1.5, 0.3, 1.0)
+			if y % 2 == 1:
+				a *= 0.55
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	return ImageTexture.create_from_image(img)
 
 
 func _draw_text(text: String, at: Vector2, color: Color) -> void:
