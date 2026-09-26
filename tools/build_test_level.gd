@@ -22,12 +22,17 @@ const CHECKPOINT := preload("res://objects/checkpoint.gd")
 const RAIN := preload("res://objects/chestnut_rain.gd")
 const CRUSHER_PERIOD := 1.0
 
+const CITY_LIFE := preload("res://effects/city_life.gd")
+const BG_MATERIAL := preload("res://effects/bg_material.tres")
+const BG_FX_MATERIAL := preload("res://effects/bg_fx_material.tres")
+
+# [nombre, textura, velocidad parallax, elementos animados [tipo, delante_de_la_capa]]
+# Tipos de effects/city_life.gd: 0 ventanas, 1 drones, 2 tráfico, 3 ventiladores
 const PARALLAX_LAYERS := [
-	["Sky", "res://assets/forest/bg_0_sky.png", 0.0],
-	["Mountains", "res://assets/forest/bg_1_mountains.png", 0.1],
-	["FarTrees", "res://assets/forest/bg_2_far_trees.png", 0.3],
-	["MidTrees", "res://assets/forest/bg_3_mid_trees.png", 0.55],
-	["NearFoliage", "res://assets/forest/bg_4_near.png", 0.8],
+	["Sky", "res://assets/city/bg_0_sky.png", 0.0, []],
+	["FarCity", "res://assets/city/bg_1_far.png", 0.15, [[0, true]]],
+	["MidCity", "res://assets/city/bg_2_mid.png", 0.4, [[1, false]]],
+	["NearCity", "res://assets/city/bg_3_near.png", 0.7, [[2, false], [3, true]]],
 ]
 
 # [desde, hasta, fila superior] (filas negativas = más alto; 0 = suelo normal)
@@ -211,26 +216,25 @@ func build_tileset() -> TileSet:
 	ts.tile_size = Vector2i(T, T)
 	ts.add_physics_layer()
 	var src := TileSetAtlasSource.new()
-	src.texture = load("res://assets/forest/tiles.png")
+	src.texture = load("res://assets/city/tiles.png")
 	src.texture_region_size = Vector2i(T, T)
 	ts.add_source(src, 0)
 	var h := T / 2.0
-	for y in 3:
-		for x in 3:
-			var c := Vector2i(x, y)
-			src.create_tile(c)
-			var data := src.get_tile_data(c, 0)
-			data.set_collision_polygons_count(0, 1)
-			if y < 2:
-				data.set_collision_polygon_points(0, 0, PackedVector2Array([
-					Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h)]))
-			else:
-				data.set_collision_polygon_points(0, 0, PackedVector2Array([
-					Vector2(-h, -h), Vector2(h, -h), Vector2(h, -h + 7), Vector2(-h, -h + 7)]))
-				data.set_collision_polygon_one_way(0, 0, true)
-	src.create_tile(Vector2i(0, 3)) # púas decorativas, sin colisión
-	ResourceSaver.save(ts, "res://assets/forest/forest_tileset.tres")
-	return load("res://assets/forest/forest_tileset.tres")
+	var solid := PackedVector2Array([Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h)])
+	var beam := PackedVector2Array([Vector2(-h, -h), Vector2(h, -h), Vector2(h, -h + 7), Vector2(-h, -h + 7)])
+	# Tejado (fila 0, con charco en la columna 3), muro (fila 1) y viga (fila 2)
+	for c in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0),
+			Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1),
+			Vector2i(0, 2), Vector2i(1, 2), Vector2i(2, 2)]:
+		src.create_tile(c)
+		var data := src.get_tile_data(c, 0)
+		data.set_collision_polygons_count(0, 1)
+		data.set_collision_polygon_points(0, 0, solid if c.y < 2 else beam)
+		if c.y == 2:
+			data.set_collision_polygon_one_way(0, 0, true)
+	src.create_tile(Vector2i(0, 3)) # púas electrificadas decorativas, sin colisión
+	ResourceSaver.save(ts, "res://assets/city/city_tileset.tres")
+	return load("res://assets/city/city_tileset.tres")
 
 
 func build_background(level: Node) -> void:
@@ -244,7 +248,27 @@ func build_background(level: Node) -> void:
 		var s := sprite(l[1])
 		s.centered = false
 		s.position = Vector2(0, VIEW_TOP)
+		s.material = BG_MATERIAL
+		# Elementos animados detrás o delante de la imagen de la capa
+		var behind := []
+		var front := []
+		for life in l[3]:
+			(front if life[1] else behind).append(life[0])
+		for kind in behind:
+			add(p, city_life(kind, s.texture), "Life%d" % kind)
 		add(p, s, "Sprite2D")
+		for kind in front:
+			add(p, city_life(kind, s.texture), "Life%d" % kind)
+
+
+func city_life(kind: int, texture: Texture2D) -> Node2D:
+	var n := Node2D.new()
+	n.set_script(CITY_LIFE)
+	n.set("kind", kind)
+	n.set("texture", texture)
+	n.position = Vector2(0, VIEW_TOP)
+	n.material = BG_FX_MATERIAL
+	return n
 
 
 func ground_top(x: int) -> int:
@@ -279,6 +303,9 @@ func build_ground(level: Node, tileset: TileSet) -> void:
 		elif cell.x < LEVEL_TILES - 1 and not filled.has(cell + Vector2i.RIGHT):
 			ax = 2
 		var ay := 0 if not filled.has(cell + Vector2i.UP) else 1
+		# Algunos tejados tienen un charco que refleja el neón
+		if ay == 0 and ax == 1 and cell.x % 7 == 3:
+			ax = 3
 		ground.set_cell(cell, 0, Vector2i(ax, ay))
 	for pl in STATIC_PLATFORMS:
 		for x in range(pl[0], pl[1] + 1):

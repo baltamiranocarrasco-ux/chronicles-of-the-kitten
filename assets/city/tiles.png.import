@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c8ll1lb40dli7"
-path="res://.godot/imported/bg_1_mountains.png-74b411ccff0a9718baa0679b7dceb849.ctex"
+uid="uid://c8habi5kgwdoc"
+path="res://.godot/imported/tiles.png-bd6e65b9eae2214c11e3475469422be4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/forest/bg_1_mountains.png"
-dest_files=["res://.godot/imported/bg_1_mountains.png-74b411ccff0a9718baa0679b7dceb849.ctex"]
+source_file="res://assets/city/tiles.png"
+dest_files=["res://.godot/imported/tiles.png-bd6e65b9eae2214c11e3475469422be4.ctex"]
 
 [params]
 

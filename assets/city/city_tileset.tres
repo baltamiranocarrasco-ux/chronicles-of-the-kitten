@@ -1,15 +1,17 @@
 [gd_resource type="TileSet" format=3]
 
-[ext_resource type="Texture2D" path="res://assets/forest/tiles.png" id="1_4g81y"]
+[ext_resource type="Texture2D" path="res://assets/city/tiles.png" id="1_blnjy"]
 
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_7yiwu"]
-texture = ExtResource("1_4g81y")
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_6w6du"]
+texture = ExtResource("1_blnjy")
 0:0/0 = 0
 0:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 1:0/0 = 0
 1:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 2:0/0 = 0
 2:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+3:0/0 = 0
+3:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 0:1/0 = 0
 0:1/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 1:1/0 = 0
@@ -29,4 +31,4 @@ texture = ExtResource("1_4g81y")
 
 [resource]
 physics_layer_0/collision_layer = 1
-sources/0 = SubResource("TileSetAtlasSource_7yiwu")
+sources/0 = SubResource("TileSetAtlasSource_6w6du")

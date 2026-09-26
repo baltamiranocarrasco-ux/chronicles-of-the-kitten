@@ -1,7 +1,9 @@
 extends Node2D
 ## Efectos visuales de las habilidades de tiempo (los controla TimePowers):
 ##   SLOW (Sandevistan): tinte lima, scanlines y estela de neón del gato.
-##   STOP (detener el tiempo): destello en negativo, mundo casi gris y azulado.
+##   STOP (detener el tiempo): destello en negativo y tinte azulado; el fondo
+##        de la ciudad pasa a escala de grises.
+## También ajusta los materiales del fondo (estela con Q, grises con R).
 ## Corre con el árbol pausado y sus animaciones ignoran Engine.time_scale.
 
 const TRAIL_COLORS: Array[Color] = [
@@ -16,6 +18,8 @@ const TRAIL_ALPHA := 0.7
 const TRAIL_MIN_DISTANCE := 3.0
 const PLAYER_Z := 1 # mismo z_index que el Sprite2D del jugador
 const AFTERIMAGE_MATERIAL := preload("res://effects/afterimage_material.tres")
+## Materiales compartidos por las capas del fondo y sus elementos animados
+const BG_MATERIALS := [preload("res://effects/bg_material.tres"), preload("res://effects/bg_fx_material.tres")]
 
 const STYLES := {
 	TimePowers.Mode.SLOW: {
@@ -26,7 +30,7 @@ const STYLES := {
 	},
 	TimePowers.Mode.STOP: {
 		tint = Color(0.6, 0.78, 1.0),
-		desaturation = 0.95,
+		desaturation = 0.55, # suave: el fondo ya pasa a grises por su cuenta
 		scanlines = 0.0,
 		trail = false,
 	},
@@ -73,6 +77,8 @@ func set_mode(new_mode: TimePowers.Mode) -> void:
 		_tween.kill()
 	_tween = _new_tween().set_parallel()
 
+	_update_background(mode)
+
 	if mode == TimePowers.Mode.NONE:
 		_trail = false
 		_material.set_shader_parameter("wave_radius", 1.2)
@@ -98,6 +104,20 @@ func set_mode(new_mode: TimePowers.Mode) -> void:
 		_tween_param("flash", 0.0, 0.3)
 	if not was_active:
 		_camera_punch()
+
+
+# Q: estela horizontal en el fondo. R: el fondo pasa a grises al instante.
+func _update_background(new_mode: TimePowers.Mode) -> void:
+	var bg_tween := _new_tween().set_parallel()
+	for m in BG_MATERIALS:
+		var smear_to := 1.0 if new_mode == TimePowers.Mode.SLOW else 0.0
+		bg_tween.tween_method(func(v: float): m.set_shader_parameter("smear", v),
+				m.get_shader_parameter("smear"), smear_to, 0.2)
+		if new_mode == TimePowers.Mode.STOP:
+			m.set_shader_parameter("freeze", 1.0)
+		else:
+			bg_tween.tween_method(func(v: float): m.set_shader_parameter("freeze", v),
+					m.get_shader_parameter("freeze"), 0.0, 0.3)
 
 
 func _new_tween() -> Tween:
