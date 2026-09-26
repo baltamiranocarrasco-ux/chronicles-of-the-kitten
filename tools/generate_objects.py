@@ -1,13 +1,15 @@
-"""Genera los sprites de los objetos móviles del nivel (pixel art).
+"""Genera los sprites de los objetos móviles del nivel (pixel art cyberpunk).
 
 Uso:  python3 tools/generate_objects.py
 Requiere Pillow (pip install pillow).
 
-Salida en objects/:
-  moving_platform.png  48x12   plataforma de piedra con musgo
-  crusher.png          32x160  tronco aplastador colgado de una cuerda
-                               (cuerda arriba, tronco de 48 px abajo)
-  spike_ball.png       16x16   castaña con púas que rueda
+Salida en objects/ (mismos tamaños que usan las escenas y colisiones):
+  moving_platform.png  48x12   plataforma antigravedad con propulsores cian
+  crusher.png          32x160  prensa hidráulica: vástago de cromo arriba y
+                               cabezal de acero de 48 px abajo (las últimas
+                               8 filas son los dientes que hacen daño)
+  spike_ball.png       16x16   mina de seguridad con púas y LED rojo (rueda;
+                               también la usa la lluvia de objects/chestnut_rain.gd)
 """
 
 import math
@@ -23,74 +25,81 @@ def rgb(h):
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (255,)
 
 
-EDGE = rgb("#2b1d14")
-STONE = rgb("#7d8088")
-STONE_LIGHT = rgb("#a2a6ad")
-STONE_DARK = rgb("#5b5e66")
-MOSS = rgb("#5fae4a")
-MOSS_LIGHT = rgb("#86cc5a")
-BARK = rgb("#6b4529")
-BARK_DARK = rgb("#4a2f1c")
-BARK_LIGHT = rgb("#8a5c38")
-RING = rgb("#c9a26b")
-RING_DARK = rgb("#9c7648")
-ROPE = rgb("#c7a46a")
-ROPE_DARK = rgb("#8f7045")
-METAL = rgb("#b8bec7")
-METAL_DARK = rgb("#6d737c")
-NUT = rgb("#8a4f2a")
-NUT_LIGHT = rgb("#b06a3a")
-NUT_SPIKE = rgb("#d9b36a")
+EDGE = rgb("#0a0812")
+STEEL = rgb("#4a5068")
+STEEL_HI = rgb("#8a92b4")
+STEEL_DK = rgb("#2c3044")
+CHROME = rgb("#c4ccde")
+CHROME_DK = rgb("#7a8298")
+HAZARD = rgb("#f0c030")
+HAZARD_DK = rgb("#1a1624")
+THRUST = rgb("#6af0ff")
+THRUST_DK = rgb("#2a8aa8")
+LED = rgb("#ff2a3a")
+LED_DK = rgb("#7a1020")
 
 
 def moving_platform():
     w, h = 48, 12
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    for y in range(h):
+    for y in range(h - 3):
         for x in range(w):
-            if y in (0, h - 1) or x in (0, w - 1):
+            if y in (0, h - 4) or x in (0, w - 1):
                 c = EDGE
-            elif y <= 3:
-                c = MOSS_LIGHT if (x * 7 + y) % 5 == 0 else MOSS
-            elif y == 4 and x % 6 in (1, 2):
-                c = MOSS
-            elif (x % 12 == 0) or y == 7 and x % 12 < 6:
-                c = STONE_DARK
-            elif y == 5:
-                c = STONE_LIGHT
+            elif y == 1:
+                c = STEEL_HI
+            elif y == h - 5:
+                c = STEEL_DK
+            elif y == 3 and x % 8 in (2, 3, 4, 5):
+                c = HAZARD if (x // 2) % 2 == 0 else HAZARD_DK  # franja de peligro
             else:
-                c = STONE if (x + y * 5) % 9 else STONE_DARK
+                c = STEEL if x % 12 else STEEL_DK
             img.putpixel((x, y), c)
+    # Propulsores antigravedad debajo, con resplandor cian
+    for nx in (6, 22, 38):
+        for x in range(nx, nx + 5):
+            img.putpixel((x, h - 3), EDGE)
+        for x in range(nx + 1, nx + 4):
+            img.putpixel((x, h - 2), THRUST)
+        img.putpixel((nx + 2, h - 1), THRUST_DK)
     return img
 
 
 def crusher():
     w, h = 32, 160
-    log_top = h - 48
+    head_top = h - 48
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    # Cuerda trenzada
-    for y in range(0, log_top):
-        for x in (15, 16):
-            img.putpixel((x, y), ROPE if (y + x) % 4 < 2 else ROPE_DARK)
-        img.putpixel((14, y), EDGE)
-        img.putpixel((17, y), EDGE)
-    # Tronco vertical con corteza (las últimas 8 filas son púas)
-    for y in range(log_top, h - 8):
-        for x in range(2, w - 2):
-            if x in (2, w - 3) or y == log_top:
+    # Vástago hidráulico de cromo
+    for y in range(0, head_top):
+        for x in range(13, 19):
+            if x in (13, 18):
                 c = EDGE
-            elif (x * 3 + (y // 5) * 7) % 11 == 0:
-                c = BARK_DARK
-            elif x in (4, 5):
-                c = BARK_LIGHT
+            elif x == 14:
+                c = CHROME
+            elif x == 17:
+                c = CHROME_DK
             else:
-                c = BARK
+                c = CHROME if (y // 3) % 5 else CHROME_DK
             img.putpixel((x, y), c)
-    # Abrazadera de metal
-    for x in range(2, w - 2):
-        for y in (log_top + 6, log_top + 7):
-            img.putpixel((x, y), METAL if y == log_top + 6 else METAL_DARK)
-    # Púas de metal en la base
+    # Cabezal de acero con franjas de peligro y remaches
+    for y in range(head_top, h - 8):
+        for x in range(2, w - 2):
+            if x in (2, w - 3) or y == head_top:
+                c = EDGE
+            elif y in (head_top + 1, head_top + 2):
+                c = STEEL_HI
+            elif head_top + 26 <= y < head_top + 32:
+                c = HAZARD if ((x + y) // 3) % 2 == 0 else HAZARD_DK
+            elif x in (3, 4):
+                c = STEEL_HI
+            elif x in (w - 5, w - 4):
+                c = STEEL_DK
+            else:
+                c = STEEL
+            if (x, y - head_top) in ((6, 6), (25, 6), (6, 20), (25, 20)):
+                c = CHROME
+            img.putpixel((x, y), c)
+    # Dientes de acero en la base (zona de daño)
     base = h - 8
     for x in range(2, w - 2):
         img.putpixel((x, base), EDGE)
@@ -99,7 +108,7 @@ def crusher():
         for dy in range(7):
             half = max(0, 3 - dy // 2)
             for dx in range(-half, half + 1):
-                img.putpixel((cx + dx, base + 1 + dy), METAL if dx <= 0 else METAL_DARK)
+                img.putpixel((cx + dx, base + 1 + dy), CHROME if dx <= 0 else CHROME_DK)
     return img
 
 
@@ -107,19 +116,16 @@ def spike_ball():
     s = 16
     c = 7.5
     px = {}
-    # Cuerpo redondo
     for y in range(s):
         for x in range(s):
             d = math.hypot(x - c, y - c)
             if d <= 4.6:
-                px[(x, y)] = NUT_LIGHT if (x - c) + (y - c) < -2 else NUT
-    # 8 púas de 2 px hacia afuera
+                px[(x, y)] = STEEL_HI if (x - c) + (y - c) < -2 else STEEL
     for i in range(8):
         a = i * math.pi / 4
         for r in (5.2, 6.2):
             x, y = round(c + math.cos(a) * r - 0.01), round(c + math.sin(a) * r - 0.01)
-            px[(x, y)] = NUT_SPIKE
-    # Contorno automático
+            px[(x, y)] = CHROME
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     for (x, y) in list(px):
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -128,9 +134,12 @@ def spike_ball():
                 img.putpixel(n, EDGE)
     for (x, y), col in px.items():
         img.putpixel((x, y), col)
-    # Ojos enojados
-    for x, y in ((6, 8), (9, 8), (5, 7), (10, 7)):
-        img.putpixel((x, y), EDGE)
+    # Ojo LED rojo en el centro
+    for x, y in ((7, 7), (8, 7), (7, 8), (8, 8)):
+        img.putpixel((x, y), LED)
+    img.putpixel((7, 7), rgb("#ff9aa0"))
+    for x, y in ((6, 7), (9, 8), (7, 9), (8, 6)):
+        img.putpixel((x, y), LED_DK)
     return img
 
 

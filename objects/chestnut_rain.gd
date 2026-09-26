@@ -1,5 +1,6 @@
 extends Node2D
-## Cortina de castañas con púas que caen sin parar desde las copas.
+## Cortina de minas con púas que caen sin parar (el nombre del archivo es
+## histórico: antes eran castañas del bosque).
 ## Es tan densa que no se puede cruzar ni con cámara lenta (la densidad no
 ## cambia); solo congelando el tiempo (R): las Area2D congeladas no dañan y,
 ## al no tener cuerpo sólido, se pueden atravesar.
