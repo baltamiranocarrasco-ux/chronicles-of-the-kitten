@@ -5,45 +5,43 @@ extends Node2D
 ##            de las ventanas en la textura de la capa)
 ##   DRONES : puntos rojos que cruzan en línea recta detrás de los edificios
 ##   TRAFFIC: autos flotantes, líneas naranjas y rojas en carriles a media altura
-##   FANS   : aspas giratorias de los ventiladores
 ## Con la Q activa, drones y tráfico dejan una estela más larga.
 ## Se dibuja en la copia vecina de cada lado para repetirse igual que la capa.
 
-enum Kind { LIGHTS, DRONES, TRAFFIC, FANS }
+enum Kind { LIGHTS, DRONES, TRAFFIC }
 
-const LAYER_WIDTH := 384.0
 const WINDOW_YELLOW := Color8(240, 200, 90)
 const WINDOW_CYAN := Color8(90, 216, 240)
 const WINDOW_OFF := Color8(26, 22, 56)
 const DRONE := Color(1.0, 0.16, 0.16)
 const CARS := [Color(1.0, 0.55, 0.15), Color(1.0, 0.25, 0.2)]
-const BLADE := Color8(92, 80, 124)
-## Centros y radios de los ventiladores de bg_3_near (ver tools/generate_city.py)
-const FAN_CENTERS := [Vector3(70, 104, 9), Vector3(262, 96, 11)]
 
 @export var kind := Kind.LIGHTS
-@export var texture: Texture2D ## capa donde buscar las ventanas (LIGHTS)
+@export var texture: Texture2D ## imagen de la capa: su ancho es el de la repetición
 
 var _t := 0.0
 var _windows := [] ## {pos, period, phase}
 var _movers := [] ## {x, y, speed, len, color}
+var _width := 384.0
 
 
 func _ready() -> void:
 	var rnd := RandomNumberGenerator.new()
 	rnd.seed = 1234 + kind
+	if texture:
+		_width = texture.get_width()
 	match kind:
 		Kind.LIGHTS:
 			_scan_windows(rnd)
 		Kind.DRONES:
-			for i in 4:
-				_movers.append({x = rnd.randf() * LAYER_WIDTH, y = rnd.randf_range(55, 110),
+			for i in 7:
+				_movers.append({x = rnd.randf() * _width, y = rnd.randf_range(55, 110),
 						speed = rnd.randf_range(14, 28) * (1 if i % 2 == 0 else -1), len = 2, color = DRONE})
 		Kind.TRAFFIC:
 			for lane in 3:
 				var dir := 1 if lane % 2 == 0 else -1
-				for i in 6:
-					_movers.append({x = rnd.randf() * LAYER_WIDTH, y = 112 + lane * 7,
+				for i in 10:
+					_movers.append({x = rnd.randf() * _width, y = 112 + lane * 7,
 							speed = rnd.randf_range(60, 110) * dir, len = rnd.randi_range(2, 3),
 							color = CARS[rnd.randi() % CARS.size()]})
 
@@ -51,12 +49,12 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	for m in _movers:
-		m.x = fposmod(m.x + m.speed * delta, LAYER_WIDTH)
+		m.x = fposmod(m.x + m.speed * delta, _width)
 	queue_redraw()
 
 
 func _draw() -> void:
-	for copy in [-LAYER_WIDTH, 0.0, LAYER_WIDTH]:
+	for copy in [-_width, 0.0, _width]:
 		match kind:
 			Kind.LIGHTS:
 				for w in _windows:
@@ -76,12 +74,6 @@ func _draw() -> void:
 						for i in range(1, int(length)):
 							draw_rect(Rect2(base + Vector2(back * i, 0), Vector2.ONE),
 									Color(m.color, 0.6 * (1.0 - i / length)))
-			Kind.FANS:
-				for f in FAN_CENTERS:
-					var center := Vector2(f.x + copy, f.y)
-					for b in 3:
-						var a := _t * TAU * 1.5 + b * TAU / 3.0
-						draw_line(center, center + Vector2.from_angle(a) * (f.z - 1), BLADE, 1.0)
 
 
 func _scan_windows(rnd: RandomNumberGenerator) -> void:

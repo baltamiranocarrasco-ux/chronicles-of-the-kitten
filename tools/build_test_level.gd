@@ -27,12 +27,13 @@ const BG_MATERIAL := preload("res://effects/bg_material.tres")
 const BG_FX_MATERIAL := preload("res://effects/bg_fx_material.tres")
 
 # [nombre, textura, velocidad parallax, elementos animados [tipo, delante_de_la_capa]]
-# Tipos de effects/city_life.gd: 0 ventanas, 1 drones, 2 tráfico, 3 ventiladores
+# Tipos de effects/city_life.gd: 0 ventanas, 1 drones, 2 tráfico
 const PARALLAX_LAYERS := [
 	["Sky", "res://assets/city/bg_0_sky.png", 0.0, []],
-	["FarCity", "res://assets/city/bg_1_far.png", 0.15, [[0, true]]],
-	["MidCity", "res://assets/city/bg_2_mid.png", 0.4, [[1, false]]],
-	["NearCity", "res://assets/city/bg_3_near.png", 0.7, [[2, false], [3, true]]],
+	["FarCity", "res://assets/city/bg_1_far.png", 0.1, []],
+	["TowerCity", "res://assets/city/bg_2_midfar.png", 0.22, [[0, true]]],
+	["MidCity", "res://assets/city/bg_3_mid.png", 0.4, [[1, false]]],
+	["NearCity", "res://assets/city/bg_4_near.png", 0.65, [[2, false]]],
 ]
 
 # [desde, hasta, fila superior] (filas negativas = más alto; 0 = suelo normal)
@@ -242,10 +243,11 @@ func build_background(level: Node) -> void:
 	for l in PARALLAX_LAYERS:
 		var p := Parallax2D.new()
 		p.scroll_scale = Vector2(l[2], 1.0)
-		p.repeat_size = Vector2(384, 0)
-		p.repeat_times = 3
 		add(bg, p, l[0])
 		var s := sprite(l[1])
+		# Cada capa se repite a su propio ancho (las de ciudad miden dos pantallas)
+		p.repeat_size = Vector2(s.texture.get_width(), 0)
+		p.repeat_times = 3
 		s.centered = false
 		s.position = Vector2(0, VIEW_TOP)
 		s.material = BG_MATERIAL
