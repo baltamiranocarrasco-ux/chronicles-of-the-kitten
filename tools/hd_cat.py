@@ -214,16 +214,25 @@ def ear(f, base_l, base_r, tip, torn=False):
         f.fur *= 1 - notch
 
 
-def side_head(f, hx, hy):
+def side_head(f, hx, hy, ears="up"):
     f.part(ellipse(hx, hy, 5.5, 5.0), FUR)
-    ear(f, (hx - 4.6, hy - 3.2), (hx - 1.2, hy - 4.6), (hx - 3.0, hy - 8.3), torn=True)
-    ear(f, (hx + 0.2, hy - 4.8), (hx + 3.6, hy - 3.6), (hx + 1.9, hy - 8.6))
+    if ears == "flat":
+        # Orejas aplastadas hacia atrás (miedo o advertencia)
+        f.part(polygon([(hx - 3.6, hy - 2.6), (hx - 7.4, hy - 5.2), (hx - 1.6, hy - 4.4)]), FUR)
+        f.part(polygon([(hx - 0.6, hy - 4.6), (hx - 3.8, hy - 7.6), (hx + 1.8, hy - 4.8)]), FUR)
+    else:
+        ear(f, (hx - 4.6, hy - 3.2), (hx - 1.2, hy - 4.6), (hx - 3.0, hy - 8.3), torn=True)
+        ear(f, (hx + 0.2, hy - 4.8), (hx + 3.6, hy - 3.6), (hx + 1.9, hy - 8.6))
     f.part(ellipse(hx + 3.7, hy + 2.1, 2.6, 1.8), FUR_HI)
 
 
 def lens(f, x, y, state="open"):
     """Lente cibernética de perfil (color clave) con aro metálico."""
     cx, cy = x + 1.0, y
+    if state == "happy":
+        f.detail(capsule(cx - 1.2, cy + 0.4, cx, cy - 0.5, 0.28), OUTLINE)
+        f.detail(capsule(cx, cy - 0.5, cx + 1.2, cy + 0.4, 0.28), OUTLINE)
+        return
     if state == "closed":
         f.detail(capsule(cx - 1.2, cy + 0.2, cx + 1.2, cy + 0.2, 0.25), OUTLINE)
         return
@@ -260,6 +269,20 @@ def spine(f, body_cov, head_cov, cols):
     f.keys.append((neck, SPINE_NECK))
 
 
+def limb(f, pts, r0, r1, tip=None):
+    """Extremidad dibujada encima con contorno propio, para que se lea sobre
+    el cuerpo negro (zarpazo, patitas recogidas)."""
+    cov = chain(pts, r0, r1)
+    if tip is not None:
+        cov = np.maximum(cov, ellipse(tip[0], tip[1], r1 + 0.35, r1 + 0.2))
+    grown = chain(pts, r0 + 0.4, r1 + 0.4)
+    if tip is not None:
+        grown = np.maximum(grown, ellipse(tip[0], tip[1], r1 + 0.75, r1 + 0.6))
+    f.detail(grown, OUTLINE)
+    f.detail(cov, FUR_HI * 0.8)
+    f.detail(cov * np.clip((_shift(cov, 0, 3) < 0.5), 0, 1) * 0.5, RIM_TOP)
+
+
 def zzz(f, x, y):
     for (a, b) in (((0, 0), (3, 0)), ((3, 0), (0, 3)), ((0, 3), (3, 3))):
         f.detail(capsule(x + a[0], y + a[1], x + b[0], y + b[1], 0.35), ZZZ)
@@ -268,7 +291,8 @@ def zzz(f, x, y):
 # --- poses ---------------------------------------------------------------------
 
 def draw_cat(body_y=0.0, legs=((0, 0), (0, 0), (0, 0), (0, 0)),
-             tail=((7, 20), (4, 17), (3, 13), (4, 10)), head_dy=0.0, eyes="open"):
+             tail=((7, 20), (4, 17), (3, 13), (4, 10)), head_dy=0.0, eyes="open",
+             head_dx=0.0, ears="up"):
     """De perfil. legs: (dx, lift) de [trasera lejana, delantera lejana,
     trasera cercana, delantera cercana]."""
     by = 21 + body_y
@@ -280,13 +304,14 @@ def draw_cat(body_y=0.0, legs=((0, 0), (0, 0), (0, 0), (0, 0)),
     body = ellipse(15, by, 9, 4.6)
     f.part(body, FUR)
     f.part(ellipse(16, by + 2.6, 6, 1.6), BELLY)
-    head = ellipse(23.5, hy, 5.5, 5.0)
-    side_head(f, 23.5, hy)
+    hx = 23.5 + head_dx
+    head = ellipse(hx, hy, 5.5, 5.0)
+    side_head(f, hx, hy, ears)
     for hip_x, (dx, lift) in ((9, legs[2]), (20, legs[3])):
         leg(f, (hip_x, by + 2), (hip_x + dx, 29.5 - lift))
     spine(f, body, head, (8, 21))
-    lens(f, 25, hy, eyes)
-    f.detail(ellipse(29.4, hy + 1.3, 0.7, 0.5), NOSE)
+    lens(f, hx + 1.5, hy, eyes)
+    f.detail(ellipse(hx + 5.9, hy + 1.3, 0.7, 0.5), NOSE)
     return f.render()
 
 
@@ -311,7 +336,7 @@ def draw_lying(head_drop=0, eyes="open", breathe=0.0, zs=()):
     return f.render()
 
 
-def draw_angry(peak_y=10.0, tail_top=4.0, hiss=False, hop=0.0, puff=1):
+def draw_angry(peak_y=10.0, tail_top=4.0, hiss=False, hop=0.0, puff=1, paw=None, claws=False):
     """Lomo arqueado, patas rectas, cola y pelo erizados."""
     f = Frame((14, peak_y + 4))
     foot = 29.5 - hop
@@ -335,8 +360,9 @@ def draw_angry(peak_y=10.0, tail_top=4.0, hiss=False, hop=0.0, puff=1):
     for i, (x, y) in enumerate(pts[1:-1]):
         if puff and i % 2 == 0:
             f.part(capsule(x, y - 2.3, x - 0.3, y - 3.6 - puff * 0.7, 0.5, 0.1), FUR)
-    for lx in (7.5, 18.5):
-        leg(f, (lx, 20 - hop), (lx, foot))
+    leg(f, (7.5, 20 - hop), (7.5, foot))
+    if paw is None:
+        leg(f, (18.5, 20 - hop), (18.5, foot))
     hx, hy = 25.5, 20 - hop
     head = ellipse(hx, hy, 5.0, 4.5)
     f.part(head, FUR)
@@ -352,6 +378,19 @@ def draw_angry(peak_y=10.0, tail_top=4.0, hiss=False, hop=0.0, puff=1):
     if hiss:
         f.detail(ellipse(hx + 3.6, hy + 2.3, 1.4, 1.0), MOUTH)
         f.detail(polygon([(hx + 4.2, hy + 1.6), (hx + 4.8, hy + 1.6), (hx + 4.5, hy + 3.0)]), FANG)
+    if paw is not None:
+        # Pata delantera lanzando un zarpazo, por delante de la cabeza
+        limb(f, [(19.5, 21 - hop), paw], 1.25, 0.9, tip=(paw[0] + 0.3, paw[1]))
+    if paw is not None and claws:
+        # Garras de plasma y el arco del golpe
+        for k in (-1, 0, 1):
+            f.detail(capsule(paw[0] + 1.0, paw[1] + k * 0.7, paw[0] + 2.9, paw[1] + k * 1.0 - 0.5, 0.26),
+                     (170, 250, 255))
+        for i in range(6):
+            a = -1.2 + i * 0.35
+            f.detail(capsule(paw[0] - 2 + math.cos(a) * 5, paw[1] + math.sin(a) * 5,
+                             paw[0] - 2 + math.cos(a + 0.3) * 5, paw[1] + math.sin(a + 0.3) * 5, 0.15),
+                     (230, 240, 255), 0.5)
     return f.render()
 
 
@@ -548,6 +587,70 @@ def walk_frames():
     return right + [mirror(f) for f in right]
 
 
+def shifted(img, dx):
+    """Desplaza el cuadro en horizontal (dx en píxeles del juego)."""
+    out = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    out.paste(img, (int(round(dx * S)), 0))
+    return out
+
+
+def draw_belly(breathe=0.0, zs=()):
+    """Durmiendo panza arriba, enroscado, con las patitas dobladas sobre el
+    pecho (máxima confianza)."""
+    f = Frame((15, 25))
+    b = breathe
+    f.part(chain(smooth_curve([(8, 27.5), (4.5, 27), (4, 29.5), (9, 30.3)]), 1.2, 0.85), FUR)
+    f.part(ellipse(14.5, 26.2 - b * 0.3, 8.2, 4.0 + b * 0.4), FUR)
+    # Panza clara y mullida hacia arriba
+    f.part(ellipse(14.5, 24.0 - b * 0.4, 5.5, 1.6), FUR_HI)
+    # Patas traseras dobladas (rodilla arriba) y delanteras recogidas junto al pecho
+    for hip, knee, paw in (((10.5, 24.5), (9.5, 21.2), (11.8, 20.6)),
+                           ((12.8, 24.2), (12.6, 20.8), (14.8, 20.8)),
+                           ((18.2, 23.8), (19.4, 21.0), (20.8, 22.0)),
+                           ((20.0, 24.4), (21.6, 21.8), (22.8, 23.0))):
+        dy = -b * 0.3
+        limb(f, [(hip[0], hip[1] + dy), (knee[0], knee[1] + dy), (paw[0], paw[1] + dy)], 1.0, 0.75,
+             tip=(paw[0], paw[1] + dy))
+    # Cabeza de lado apoyada, orejas hacia el suelo y cara hacia arriba
+    hx, hy = 24.6, 25.4
+    f.part(ellipse(hx, hy, 5.0, 4.5), FUR)
+    ear(f, (hx - 4.4, hy + 1.8), (hx - 1.6, hy + 3.9), (hx - 4.4, hy + 6.2), torn=True)
+    ear(f, (hx + 0.2, hy + 4.0), (hx + 3.6, hy + 3.0), (hx + 2.6, hy + 6.4))
+    f.part(ellipse(hx + 3.2, hy - 1.8, 2.4, 1.6), FUR_HI)
+    lens(f, hx - 0.2, hy - 0.4, "happy")
+    f.detail(ellipse(hx + 5.2, hy - 2.2, 0.7, 0.5), NOSE)
+    for x, y in zs:
+        zzz(f, x, y)
+    return f.render()
+
+
+def bond_frames():
+    """Fila 8: zarpazo (3), retroceder con miedo (2), dejarse acariciar (2), cabezazo (1)."""
+    high_tail = ((7, 20), (5, 15), (6, 10), (9, 8))
+    return [
+        draw_angry(peak_y=13, tail_top=6, hiss=True, puff=1, paw=(21.5, 12.5)),
+        draw_angry(peak_y=13, tail_top=6, hiss=True, puff=2, paw=(29.5, 16.5), claws=True),
+        draw_angry(peak_y=13, tail_top=7, hiss=False, puff=1, paw=(24.5, 22.0)),
+        shifted(draw_cat(body_y=2.5, head_dy=1.2, head_dx=-1.2, ears="flat", eyes="half",
+                         tail=((7, 22), (4, 24), (2, 26), (0, 27))), -1.4),
+        shifted(draw_cat(body_y=3.0, head_dy=1.6, head_dx=-1.6, ears="flat", eyes="half",
+                         tail=((7, 22), (4, 24.5), (2, 26.5), (0, 27.5))), -2.0),
+        draw_cat(head_dy=-1.2, head_dx=0.5, eyes="happy", tail=high_tail),
+        draw_cat(head_dy=-0.6, head_dx=0.3, eyes="happy", tail=((7, 20), (5, 15), (7, 10), (10, 9))),
+        draw_cat(head_dy=0.8, head_dx=1.8, eyes="happy", tail=high_tail),
+    ]
+
+
+def bond_frames_2():
+    """Fila 9: advertencia (2: orejas atrás, cola azotando) y panza arriba (4)."""
+    breath = [0, 0.6, 1, 0.5]
+    z_path = [(27, 14), (27, 11), (28, 8), (28, 5)]
+    return [
+        draw_cat(body_y=0.5, ears="flat", eyes="half", tail=((7, 20), (3, 21), (1, 19), (-1, 17))),
+        draw_cat(body_y=0.5, ears="flat", eyes="half", tail=((7, 20), (3, 21), (0, 22), (-2, 24))),
+    ] + [draw_belly(breath[i], zs=[z_path[i]]) for i in range(4)]
+
+
 def sheet_rows():
     return [
         idle_frames(),
@@ -558,4 +661,6 @@ def sheet_rows():
         sleep_frames(),
         angry_frames(),
         walk_frames(),
+        bond_frames(),
+        bond_frames_2(),
     ]

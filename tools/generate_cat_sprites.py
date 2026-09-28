@@ -14,6 +14,8 @@ Hoja de 8 columnas x 8 filas, gato mirando a la derecha:
           otro lado, lado opuesto
   fila 4: acostarse (7)   fila 5: dormir (8)   fila 6: enojo (8)
   fila 7: caminar a la derecha (4) y a la izquierda (4)
+  fila 8: zarpazo (3), retroceder con miedo (2), dejarse acariciar (2), cabezazo (1)
+  fila 9: advertencia (2), dormir panza arriba (4)
 
 Además reescribe las animaciones de scenes/player.tscn según ANIMATIONS,
 para que la hoja y las animaciones siempre coincidan.
@@ -28,7 +30,7 @@ from PIL import Image
 import cyber_cat
 import hd_cat
 
-COLS, ROWS = 8, 8
+COLS, ROWS = 8, 10
 GAME_FRAME = 32  ## tamaño del cuadro en píxeles del juego
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -80,6 +82,13 @@ ANIMATIONS = {
     "sleep": (True, _row(5, range(8), 1 / 5)),
     # Reutiliza el gato agachado de "acostarse" (sin cuadros nuevos)
     "slide": (False, [(4 * COLS + 1, 0.05), (4 * COLS + 2, 0.5)]),
+    # Relación con el gato (effects/bond_controller.gd)
+    "swipe": (False, [(8 * COLS + c, d) for c, d in [(0, 0.09), (1, 0.14), (2, 0.12)]]),
+    "flinch": (True, [(8 * COLS + 3, 0.35), (8 * COLS + 4, 0.35)]),
+    "pet": (True, [(8 * COLS + 5, 0.4), (8 * COLS + 6, 0.4)]),
+    "headbutt": (False, [(8 * COLS + c, d) for c, d in [(7, 0.15), (5, 0.2), (7, 0.15), (5, 0.25)]]),
+    "warn": (False, [(9 * COLS + c, d) for c, d in [(0, 0.12), (1, 0.12), (0, 0.12), (1, 0.12), (0, 0.3)]]),
+    "sleep_belly": (True, _row(9, range(2, 6), 1 / 3)),
     "angry": (False, [(6 * COLS + c, d) for c, d in
                       [(0, 0.06), (1, 0.06), (2, 0.08), (3, 0.1), (4, 0.15), (5, 0.25),
                        (4, 0.1), (5, 0.2), (3, 0.1), (6, 0.1), (7, 0.1)]]),
@@ -201,6 +210,10 @@ def main():
     rows = cyber_cat.sheet_rows() if pixel else hd_cat.sheet_rows()
     if pixel:
         rows = [[_pixel_image(px) for px in r] for r in rows]
+        # El pixel art no tiene poses propias para la relación: reutiliza otras
+        idle, lie, sleep, angry = rows[0], rows[4], rows[5], rows[6]
+        rows += [angry[3:6] + lie[1:3] + [idle[0], idle[1], idle[0]],
+                 angry[6:8] + sleep[:4]]
     frame = rows[0][0].width
     sheet = Image.new("RGBA", (frame * COLS, frame * ROWS), (0, 0, 0, 0))
     for r, frames in enumerate(rows):

@@ -14,6 +14,7 @@ enum State {
 	SETTLING, ## da vueltas y se acuesta
 	SLEEPING,
 	ANGRY, ## lo despertaron: arquea el lomo y no obedece hasta terminar
+	MOOD, ## reacciona al mouse (effects/bond_controller.gd); moverse lo interrumpe
 }
 
 var state := State.NORMAL
@@ -134,6 +135,10 @@ func _update_rest_state(real_delta: float, direction: float, jump_pressed: bool)
 				_set_state(State.NORMAL)
 			elif wants_to_move:
 				_set_state(State.ANGRY)
+		State.MOOD:
+			# El jugador siempre tiene prioridad sobre las reacciones al mouse
+			if wants_to_move or not is_on_floor() or _any_action_pressed():
+				_set_state(State.NORMAL)
 
 func _any_action_pressed() -> bool:
 	for action in ["slow_time", "stop_time", "interact", "move_up", "move_down", "sprint", "slide"]:
@@ -150,7 +155,8 @@ func _set_state(new_state: State) -> void:
 		State.SETTLING:
 			animationplayer.play("settle")
 		State.SLEEPING:
-			animationplayer.play("sleep")
+			# Con mucha confianza duerme panza arriba
+			animationplayer.play("sleep_belly" if CatBond.is_bonded() else "sleep")
 		State.ANGRY:
 			animationplayer.play("angry")
 
@@ -159,6 +165,52 @@ func _on_animation_finished(anim_name: StringName) -> void:
 		_set_state(State.SLEEPING)
 	elif anim_name == &"angry" and state == State.ANGRY:
 		_set_state(State.NORMAL)
+	elif state == State.MOOD:
+		_set_state(State.NORMAL) # terminó una reacción que no se repite
+
+# --- reacciones al mouse (las usa effects/bond_controller.gd) ------------------
+
+## Quieto en el suelo y sin estar durmiendo ni enojado: puede reaccionar.
+func can_react() -> bool:
+	return (state == State.NORMAL or state == State.MOOD) and is_on_floor() \
+			and absf(velocity.x) < 1.0 and not sliding
+
+## Reproduce una reacción (zarpazo, retroceder, dejarse acariciar...).
+func play_mood(anim: StringName) -> void:
+	if not can_react():
+		return
+	if state != State.MOOD:
+		state = State.MOOD
+		idle_time = 0.0
+	if animationplayer.current_animation != anim:
+		animationplayer.play(anim)
+
+func end_mood() -> void:
+	if state == State.MOOD:
+		_set_state(State.NORMAL)
+
+func mood() -> StringName:
+	return animationplayer.current_animation if state == State.MOOD else &""
+
+## Mira hacia un lado (-1 izquierda, 1 derecha) si está quieto.
+func face(dir: float) -> void:
+	if can_react() and dir != 0.0:
+		sprite2D.flip_h = dir < 0.0
+
+func facing() -> float:
+	return -1.0 if sprite2D.flip_h else 1.0
+
+func is_asleep() -> bool:
+	return state == State.SETTLING or state == State.SLEEPING
+
+## Hacer clic sobre el gato dormido lo despierta enojado.
+func wake_by_click() -> void:
+	if is_asleep():
+		_set_state(State.ANGRY)
+
+## Mientras lo acarician no se va a dormir.
+func keep_awake() -> void:
+	idle_time = 0.0
 
 func animations(direction, sprinting := false):
 	if sliding:

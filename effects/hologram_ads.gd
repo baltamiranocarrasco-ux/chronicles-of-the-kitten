@@ -14,6 +14,7 @@ extends Node2D
 const META := preload("res://assets/city/city_meta.gd")
 const COLORS := [Color(0.3, 0.92, 1.0), Color(1.0, 0.3, 0.85), Color(1.0, 0.64, 0.22)]
 const RECALL_COLOR := Color(1.0, 0.22, 0.2)
+const ADOPTED_COLOR := Color(1.0, 0.62, 0.78) ## cuando el gato confía del todo (CatBond.ADOPTED)
 const SLOT := 6.0 ## segundos que se muestra cada anuncio
 const SWITCH := 0.45 ## duración del colapso / despliegue al cambiar
 const LIFT := 36.0 ## altura del centro del holograma sobre el cabezal del proyector
@@ -127,7 +128,10 @@ func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:
 	var local := fmod(time, SLOT)
 	var unfold := clampf(minf(local, SLOT - local) / SWITCH, 0.0, 1.0)
 	unfold = unfold * unfold * (3.0 - 2.0 * unfold)
+	var adopted := index == RECALL and CatBond.trust >= CatBond.ADOPTED
 	var col: Color = RECALL_COLOR if index == RECALL else COLORS[index % COLORS.size()]
+	if adopted:
+		col = ADOPTED_COLOR
 
 	# Tubo fluorescente defectuoso: parpadeos cortos a ráfagas y, a veces, un
 	# salto de imagen que deja una copia desplazada un instante
@@ -172,7 +176,8 @@ func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:
 			var p := center + Vector2(_rnd.randf_range(-20, 20), _rnd.randf_range(-22, 22))
 			draw_rect(Rect2(p, Vector2(0.4, 0.4)), Color(col.lightened(0.3), 0.8 * (1.0 - unfold)))
 
-	_draw_label(ADS[index], center + Vector2(22, -20), col, unfold * flicker, time, index == RECALL)
+	var ad: Array = ["SUJETO K-7", "ADOPTADO"] if adopted else ADS[index]
+	_draw_label(ad, center + Vector2(22, -20), col, unfold * flicker, time, index == RECALL)
 
 
 func _draw_beam(spot: Dictionary, head: Vector2, center: Vector2, top_y: float, col: Color, flicker: float, time: float) -> void:
@@ -437,7 +442,7 @@ func _draw_recall(center: Vector2, time: float, unfold: float, flicker: float, c
 	draw_set_transform(center + Vector2(0, -2), 0.0, Vector2(sx, unfold) / 3.0)
 	draw_texture(_cat_holo, -Vector2(CARD, CARD) / 2.0, Color(col, 0.95 * flicker))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
-	if int(time * 3.0) % 3 != 0:
+	if CatBond.trust < CatBond.ADOPTED and int(time * 3.0) % 3 != 0:
 		var h := 10.0 * unfold
 		draw_line(center + Vector2(-13, h), center + Vector2(13, -h), Color(col, 0.9 * flicker), 0.6, true)
 		draw_line(center + Vector2(-13, h), center + Vector2(13, -h), Color(col, 0.25 * flicker), 2.0, true)

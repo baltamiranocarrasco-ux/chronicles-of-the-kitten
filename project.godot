@@ -14,6 +14,10 @@ run/main_scene="uid://b7kittestlvl1"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
+[autoload]
+
+CatBond="*res://systems/cat_bond.gd"
+
 [display]
 
 window/size/viewport_width=384
