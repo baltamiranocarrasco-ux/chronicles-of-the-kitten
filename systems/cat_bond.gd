@@ -29,9 +29,21 @@ var _save_wait := 0.0
 
 func _ready() -> void:
 	process_mode = PROCESS_MODE_ALWAYS
+	_migrate_old_save()
 	var cfg := ConfigFile.new()
 	if cfg.load(SAVE_PATH) == OK:
 		trust = clampf(float(cfg.get_value("bond", "trust", 0.0)), 0.0, MAX_TRUST)
+
+
+# Antes el proyecto no tenía nombre y Godot guardaba en la carpeta
+# "[unnamed project]"; si ahí hay una relación guardada, se trae.
+func _migrate_old_save() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		return
+	var old := OS.get_user_data_dir().get_base_dir().path_join("[unnamed project]").path_join("cat_bond.cfg")
+	if FileAccess.file_exists(old):
+		DirAccess.make_dir_recursive_absolute(OS.get_user_data_dir())
+		DirAccess.copy_absolute(old, ProjectSettings.globalize_path(SAVE_PATH))
 
 
 ## Cambia la confianza. Las subidas se recortan al tope de la sesión.

@@ -10,13 +10,15 @@ config_version=5
 
 [application]
 
-run/main_scene="uid://b7kittestlvl1"
+config/name="Chronicles of the Kitten"
+run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]
 
 CatBond="*res://systems/cat_bond.gd"
+Game="*res://systems/game.gd"
 
 [display]
 
