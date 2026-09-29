@@ -292,9 +292,12 @@ def zzz(f, x, y):
 
 def draw_cat(body_y=0.0, legs=((0, 0), (0, 0), (0, 0), (0, 0)),
              tail=((7, 20), (4, 17), (3, 13), (4, 10)), head_dy=0.0, eyes="open",
-             head_dx=0.0, ears="up"):
+             head_dx=0.0, ears="up", paw=None, claws=False, slash=0.0, paw_behind=False):
     """De perfil. legs: (dx, lift) de [trasera lejana, delantera lejana,
-    trasera cercana, delantera cercana]."""
+    trasera cercana, delantera cercana]. paw: punta de la pata delantera
+    cercana levantada (ataque); claws: garras de plasma extendidas; slash:
+    intensidad del destello de las garras al golpear; paw_behind: la pata
+    queda detrás de la cabeza (al cargar el golpe)."""
     by = 21 + body_y
     hy = 14 + body_y + head_dy
     f = Frame((15, by))
@@ -306,13 +309,45 @@ def draw_cat(body_y=0.0, legs=((0, 0), (0, 0), (0, 0), (0, 0)),
     f.part(ellipse(16, by + 2.6, 6, 1.6), BELLY)
     hx = 23.5 + head_dx
     head = ellipse(hx, hy, 5.5, 5.0)
+    if paw is not None and paw_behind:
+        raised_paw(f, by, paw, False, 0.0, behind=True)
     side_head(f, hx, hy, ears)
     for hip_x, (dx, lift) in ((9, legs[2]), (20, legs[3])):
+        if hip_x == 20 and paw is not None:
+            continue
         leg(f, (hip_x, by + 2), (hip_x + dx, 29.5 - lift))
     spine(f, body, head, (8, 21))
     lens(f, hx + 1.5, hy, eyes)
     f.detail(ellipse(hx + 5.9, hy + 1.3, 0.7, 0.5), NOSE)
+    if paw is not None and not paw_behind:
+        raised_paw(f, by, paw, claws, slash)
+    elif paw is not None and claws:
+        attack_claws(f, paw, slash)
     return f.render()
+
+
+def raised_paw(f, by, paw, claws, slash, behind=False):
+    """Pata delantera cercana levantada (ataque). Detrás de la cabeza se
+    dibuja como pelaje (queda tapada); delante, con contorno propio."""
+    shoulder = (19.5, by + 1.0)
+    elbow = ((shoulder[0] + paw[0]) / 2 - 0.8, (shoulder[1] + paw[1]) / 2 + 1.0)
+    if behind:
+        f.part(chain([shoulder, elbow, paw], 1.35, 1.0), FUR)
+        f.part(ellipse(paw[0] + 0.3, paw[1], 1.35, 1.2), FUR)
+    else:
+        limb(f, [shoulder, elbow, paw], 1.35, 1.0, tip=(paw[0] + 0.3, paw[1]))
+    if claws:
+        attack_claws(f, paw, slash)
+
+
+def attack_claws(f, paw, slash):
+    """Tres garras de plasma cian y, al golpear, su destello."""
+    for k in (-1, 0, 1):
+        f.detail(capsule(paw[0] + 0.9, paw[1] + k * 0.75, paw[0] + 2.4, paw[1] + k * 1.05 + 0.6, 0.24),
+                 (170, 250, 255))
+    if slash > 0.0:
+        f.detail(ellipse(paw[0] + 1.6, paw[1] + 0.4, 2.2, 2.0), (120, 240, 255), 0.35 * slash)
+        f.detail(ellipse(paw[0] + 1.6, paw[1] + 0.4, 1.0, 0.9), (235, 255, 255), 0.8 * slash)
 
 
 def draw_lying(head_drop=0, eyes="open", breathe=0.0, zs=()):
@@ -651,6 +686,25 @@ def bond_frames_2():
     ] + [draw_belly(breath[i], zs=[z_path[i]]) for i in range(4)]
 
 
+def attack_frames():
+    """Fila 10: zarpazo de ataque (clic izquierdo). Se agacha, levanta la pata
+    por encima de la cabeza, la baja de golpe hacia adelante con las garras de
+    plasma y vuelve a apoyarla. El arco del golpe lo dibuja el juego."""
+    up_tail = ((7, 20), (4, 16), (4, 12), (6, 9))
+    lash = ((7, 20), (3, 18), (1, 15), (0, 12))
+    push = ((-2, 0), (0, 0), (-2.5, 0), (0, 0))
+    return [
+        draw_cat(body_y=1.2, head_dy=0.6, head_dx=-0.6, eyes="half", tail=up_tail, paw=(23.0, 19.5)),
+        draw_cat(body_y=0.8, head_dy=0.8, head_dx=-1.2, eyes="half", tail=up_tail, paw=(26.0, 6.5),
+                 claws=True, paw_behind=True),
+        draw_cat(body_y=0.4, head_dx=1.2, tail=lash, legs=push, paw=(29.0, 16.5), claws=True, slash=1.0),
+        draw_cat(body_y=0.8, head_dy=0.4, head_dx=1.0, tail=lash, legs=push, paw=(28.0, 24.5), claws=True,
+                 slash=0.4),
+        draw_cat(body_y=0.6, head_dy=0.3, head_dx=0.5, tail=tail_wave(0.5), paw=(25.0, 27.5)),
+        draw_cat(body_y=0.2, tail=tail_wave(1.0)),
+    ]
+
+
 def sheet_rows():
     return [
         idle_frames(),
@@ -663,4 +717,5 @@ def sheet_rows():
         walk_frames(),
         bond_frames(),
         bond_frames_2(),
+        attack_frames(),
     ]

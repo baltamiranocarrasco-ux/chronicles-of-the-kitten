@@ -153,7 +153,7 @@ func _add_ui() -> void:
 	box.add_child(_button("SALIR", func(): get_tree().quit()))
 
 	var hint := Label.new()
-	hint.text = "A/D mover   ESPACIO saltar   SHIFT correr   CTRL deslizarse   Q/R tiempo   ESC menú"
+	hint.text = "A/D mover   ESPACIO saltar   SHIFT correr   CTRL deslizarse   CLIC zarpazo   Q/R tiempo   ESC menú"
 	hint.add_theme_font_size_override("font_size", 6)
 	hint.add_theme_color_override("font_color", Color(0.75, 0.8, 0.95, 0.75))
 	hint.position = Vector2(8, VIEW.y - 14)

@@ -9,6 +9,21 @@ const JUMP_VELOCITY = -320.0 # ~52 px de altura con la gravedad por defecto (980
 const FALL_LIMIT = 40.0 # si cae más abajo (fosos), reaparece
 const SLEEP_AFTER = 8.0 # segundos quieto antes de dar vueltas y acostarse
 
+# Zarpazo (clic izquierdo o J). Los tiempos siguen la animación "attack":
+# el golpe cuenta mientras la pata baja con las garras (cuadros 2 y 3).
+const ATTACK_TIME = 0.33
+const ATTACK_HIT_FROM = 0.08
+const ATTACK_HIT_TO = 0.18
+const ATTACK_BUFFER = 0.15 # un clic un poco antes de terminar el anterior no se pierde
+const ATTACK_MOVE = 0.45 # en el suelo avanza más lento mientras golpea
+const ATTACK_DAMAGE = 1
+const ATTACK_BOX = Vector2(26, 22) # zona del golpe, delante del gato
+const ATTACK_BOX_OFFSET = Vector2(15, 3)
+const PUSH_FORCE = 6.0 # empuje al caminar contra objetos sueltos (cajas)
+
+signal attacked(dir: float) ## empezó un zarpazo (effects/claw_slash.gd dibuja el arco)
+signal hit_landed(target: Node2D) ## el zarpazo golpeó algo
+
 enum State {
 	NORMAL,
 	SETTLING, ## da vueltas y se acuesta
@@ -21,6 +36,10 @@ var state := State.NORMAL
 var idle_time := 0.0
 var sliding := false
 var slide_cooldown := 0.0
+var attack_time := -1.0 ## tiempo desde que empezó el zarpazo; < 0 si no ataca
+var _attack_buffer := 0.0
+var _attack_hits := {} ## lo que ya golpeó este zarpazo (un golpe por objeto)
+var _attack_shape := RectangleShape2D.new()
 ## Desplazamiento del sprite mientras da vueltas antes de dormir (lo anima
 ## "settle"). Es solo visual: el cuerpo no se mueve. Mirando a la izquierda
 ## se invierte, igual que el dibujo.
@@ -33,11 +52,13 @@ var settle_offset := 0.0:
 @onready var animationplayer = $AnimationPlayer
 @onready var sprite2D = $Sprite2D
 @onready var time_powers: TimePowers = $TimePowers
+@onready var bond = $BondController
 
 @onready var spawn_position: Vector2 = global_position
 
 func _ready() -> void:
 	animationplayer.animation_finished.connect(_on_animation_finished)
+	_attack_shape.size = ATTACK_BOX
 
 func _physics_process(delta: float) -> void:
 	# El gato ignora la cámara lenta (Sandevistan): usa tiempo real y el
@@ -50,14 +71,21 @@ func _physics_process(delta: float) -> void:
 
 	var direction := Input.get_axis("move_left", "move_right")
 	var jump_pressed := Input.is_action_just_pressed("jump")
-	_update_rest_state(delta * time_boost, direction, jump_pressed)
+	# Con el cursor sobre el gato el clic es para él (bond_controller), no un ataque
+	var attack_pressed: bool = Input.is_action_just_pressed("attack") \
+			and not (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and bond.is_mouse_over())
+	_update_rest_state(delta * time_boost, direction, jump_pressed or attack_pressed)
 	if state != State.NORMAL:
 		direction = 0.0
 		jump_pressed = false
+		attack_pressed = false
+	_update_attack(delta * time_boost, attack_pressed)
 
 	var sprinting := Input.is_action_pressed("sprint") and direction != 0.0
 	# La sobrecarga de las habilidades de tiempo deja al gato más lento
 	var speed_mult := TimePowers.OVERLOAD_SPEED if time_powers.is_overloaded() else 1.0
+	if is_attacking() and is_on_floor():
+		speed_mult *= ATTACK_MOVE
 	_update_slide(delta * time_boost, direction, sprinting, speed_mult)
 
 	if jump_pressed and is_on_floor():
@@ -81,13 +109,17 @@ func _physics_process(delta: float) -> void:
 	velocity *= time_boost
 	move_and_slide()
 	velocity /= time_boost
+	_push_loose_objects()
 	if state == State.NORMAL:
 		animations(direction, sprinting)
 
 	if global_position.y > FALL_LIMIT:
 		respawn()
 
-	if direction == 1:
+	# Mientras da el zarpazo no se da vuelta
+	if is_attacking():
+		pass
+	elif direction == 1:
 		sprite2D.flip_h = false
 	elif direction == -1:
 		sprite2D.flip_h = true
@@ -98,6 +130,8 @@ func respawn() -> void:
 	velocity = Vector2.ZERO
 	sliding = false
 	_set_state(State.NORMAL)
+	attack_time = -1.0
+	_attack_buffer = 0.0
 
 # Ctrl mientras corre (Shift) en el suelo: se desliza en la dirección en que
 # mira, frenando hasta la velocidad de carrera. No se puede girar mientras dura.
@@ -149,6 +183,8 @@ func _any_action_pressed() -> bool:
 func _set_state(new_state: State) -> void:
 	state = new_state
 	idle_time = 0.0
+	if state != State.NORMAL:
+		attack_time = -1.0
 	if state != State.SETTLING:
 		settle_offset = 0.0
 	match state:
@@ -213,6 +249,8 @@ func keep_awake() -> void:
 	idle_time = 0.0
 
 func animations(direction, sprinting := false):
+	if is_attacking():
+		return # "attack" se reproduce entera
 	if sliding:
 		animationplayer.play("slide")
 	elif is_on_floor():
@@ -226,3 +264,55 @@ func animations(direction, sprinting := false):
 			animationplayer.play("jump")
 		elif velocity.y > 0:
 			animationplayer.play("fall")
+
+# --- zarpazo -------------------------------------------------------------------
+
+func is_attacking() -> bool:
+	return attack_time >= 0.0
+
+func _update_attack(real_delta: float, pressed: bool) -> void:
+	if pressed:
+		_attack_buffer = ATTACK_BUFFER
+	else:
+		_attack_buffer = maxf(_attack_buffer - real_delta, 0.0)
+	if is_attacking():
+		attack_time += real_delta
+		if attack_time >= ATTACK_HIT_FROM and attack_time - real_delta <= ATTACK_HIT_TO:
+			_attack_query()
+		if attack_time >= ATTACK_TIME:
+			attack_time = -1.0
+	if not is_attacking() and _attack_buffer > 0.0 and state == State.NORMAL and not sliding:
+		_attack_buffer = 0.0
+		attack_time = 0.0
+		idle_time = 0.0
+		_attack_hits.clear()
+		animationplayer.play("attack")
+		animationplayer.seek(0.0, true)
+		attacked.emit(facing())
+
+## Busca lo que está dentro de la zona del golpe. Es una consulta directa al
+## espacio físico (no un Area2D), así que también funciona con el tiempo
+## detenido (R): los golpes se acumulan y se aplican al reanudarse.
+func _attack_query() -> void:
+	var query := PhysicsShapeQueryParameters2D.new()
+	query.shape = _attack_shape
+	query.transform = Transform2D(0.0, global_position + ATTACK_BOX_OFFSET * Vector2(facing(), 1.0))
+	query.exclude = [get_rid()]
+	for hit in get_world_2d().direct_space_state.intersect_shape(query, 16):
+		var target = hit.collider
+		if target == null or not target.has_method("take_hit"):
+			continue
+		var id: int = target.get_instance_id()
+		if _attack_hits.has(id):
+			continue
+		_attack_hits[id] = true
+		target.take_hit(Vector2(facing(), 0.0), ATTACK_DAMAGE)
+		hit_landed.emit(target)
+
+## El gato empuja un poco los objetos sueltos (cajas) al caminar contra ellos.
+func _push_loose_objects() -> void:
+	for i in get_slide_collision_count():
+		var c := get_slide_collision(i)
+		var body := c.get_collider() as RigidBody2D
+		if body and absf(c.get_normal().x) > 0.5:
+			body.apply_central_impulse(-c.get_normal() * PUSH_FORCE)

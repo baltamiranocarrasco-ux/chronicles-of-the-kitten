@@ -20,6 +20,7 @@ const MOVER := preload("res://objects/mover.gd")
 const HAZARD := preload("res://objects/hazard.gd")
 const CHECKPOINT := preload("res://objects/checkpoint.gd")
 const RAIN := preload("res://objects/chestnut_rain.gd")
+const CRATE := preload("res://objects/crate.gd")
 const CRUSHER_PERIOD := 1.0
 
 const CITY_LIFE := preload("res://effects/city_life.gd")
@@ -50,6 +51,15 @@ const GROUND_STEPS := [
 ]
 const PITS := [[45, 58]]
 const STATIC_PLATFORMS := [[96, 100, -2], [103, 107, -4], [110, 113, -2]]
+# Cajas para probar el zarpazo, al principio: [nombre, x, y del centro, tipo]
+# (tipo de objects/crate.gd: 0 metal 16x16, 1 cartón 14x11). Apiladas con
+# medio píxel de aire para que no arranquen encimadas.
+const CRATES := [
+	["Box1", 112, -5.5, 1],
+	["Metal1", 150, -8, 0],
+	["Metal2", 214, -8, 0], ["Metal3", 230.5, -8, 0], ["Metal4", 222, -24.5, 0], ["Box2", 222, -38.5, 1],
+	["Box3", 290, -5.5, 1], ["Box4", 305, -5.5, 1], ["Box5", 297.5, -17.5, 1],
+]
 const CHECKPOINTS := [[41, 0], [60, 0], [92, 0], [122, 0], [158, 0], [168, 0], [180, -6]]
 
 
@@ -58,6 +68,7 @@ func _init() -> void:
 	var platform_scene := save_scene(build_moving_platform(), "res://objects/moving_platform.tscn")
 	var crusher_scene := save_scene(build_crusher(), "res://objects/crusher.tscn")
 	var ball_scene := save_scene(build_spike_ball(), "res://objects/spike_ball.tscn")
+	var crate_scene := save_scene(build_crate(), "res://objects/crate.tscn")
 
 	var level := Node2D.new()
 	level.name = "TestLevel"
@@ -66,6 +77,10 @@ func _init() -> void:
 	build_bounds(level)
 
 	var objects := add(level, Node2D.new(), "Objects")
+	# Sección 0: cajas para probar el zarpazo (clic izquierdo)
+	var crates := add(objects, Node2D.new(), "Crates")
+	for c in CRATES:
+		place(crates, crate_scene, c[0], Vector2(c[1], c[2]), {kind = c[3]})
 	# Sección 1: foso con plataformas móviles (congela el tiempo para subirte fácil)
 	place(objects, platform_scene, "PitPlatform1", Vector2(744, 6), {travel = Vector2(80, 0), period = 2.4})
 	place(objects, platform_scene, "PitPlatform2", Vector2(840, 6), {travel = Vector2(80, 0), period = 2.4})
@@ -215,6 +230,16 @@ func build_spike_ball() -> Node:
 	hazard.set_script(HAZARD)
 	add(body, hazard, "Hazard")
 	add(hazard, collision(circle_shape(7)), "CollisionShape2D", body)
+	return body
+
+
+func build_crate() -> Node:
+	# El dibujo, la forma y el peso los pone objects/crate.gd según el tipo
+	var body := RigidBody2D.new()
+	body.name = "Crate"
+	body.set_script(CRATE)
+	add(body, Sprite2D.new(), "Sprite2D")
+	add(body, CollisionShape2D.new(), "CollisionShape2D")
 	return body
 
 

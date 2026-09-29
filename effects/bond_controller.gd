@@ -223,6 +223,12 @@ func _new_pet_limit() -> float:
 
 # --- geometría ------------------------------------------------------------------
 
+## El cursor está sobre el gato: ahí el clic es para él (acariciar,
+## despertarlo), no un zarpazo (ver movment.gd).
+func is_mouse_over() -> bool:
+	return _distance_to_cat(_mouse()) <= 0.0
+
+
 func _mouse() -> Vector2:
 	return debug_mouse if debug_mouse != null else get_global_mouse_position()
 

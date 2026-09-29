@@ -16,6 +16,7 @@
 [ext_resource type="Script" path="res://objects/chestnut_rain.gd" id="14_ebw8u"]
 [ext_resource type="Script" path="res://objects/checkpoint.gd" id="15_o82sj"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="16_dlpwt"]
+[ext_resource type="PackedScene" path="res://objects/crate.tscn" id="17_crate"]
 
 [sub_resource type="WorldBoundaryShape2D" id="WorldBoundaryShape2D_cslnn"]
 normal = Vector2(1, 0)
@@ -141,6 +142,40 @@ position = Vector2(3200, 0)
 shape = SubResource("WorldBoundaryShape2D_l0wrk")
 
 [node name="Objects" type="Node2D" parent="." unique_id=1650328254]
+
+[node name="Crates" type="Node2D" parent="Objects" unique_id=1816087198]
+
+[node name="Box1" parent="Objects/Crates" unique_id=642730241 instance=ExtResource("17_crate")]
+position = Vector2(112, -5.5)
+kind = 1
+
+[node name="Metal1" parent="Objects/Crates" unique_id=799878127 instance=ExtResource("17_crate")]
+position = Vector2(150, -8)
+
+[node name="Metal2" parent="Objects/Crates" unique_id=523729283 instance=ExtResource("17_crate")]
+position = Vector2(214, -8)
+
+[node name="Metal3" parent="Objects/Crates" unique_id=616455894 instance=ExtResource("17_crate")]
+position = Vector2(230.5, -8)
+
+[node name="Metal4" parent="Objects/Crates" unique_id=514743897 instance=ExtResource("17_crate")]
+position = Vector2(222, -24.5)
+
+[node name="Box2" parent="Objects/Crates" unique_id=1866425269 instance=ExtResource("17_crate")]
+position = Vector2(222, -38.5)
+kind = 1
+
+[node name="Box3" parent="Objects/Crates" unique_id=2117909015 instance=ExtResource("17_crate")]
+position = Vector2(290, -5.5)
+kind = 1
+
+[node name="Box4" parent="Objects/Crates" unique_id=347094926 instance=ExtResource("17_crate")]
+position = Vector2(305, -5.5)
+kind = 1
+
+[node name="Box5" parent="Objects/Crates" unique_id=727763166 instance=ExtResource("17_crate")]
+position = Vector2(297.5, -17.5)
+kind = 1
 
 [node name="PitPlatform1" parent="Objects" unique_id=597934269 instance=ExtResource("11_1olsq")]
 position = Vector2(744, 6)
