@@ -1,0 +1,30 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://objects/mover.gd" id="1_altrg"]
+[ext_resource type="Texture2D" path="res://objects/crusher.png" id="2_org5b"]
+[ext_resource type="Script" path="res://objects/hazard.gd" id="3_627pt"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_t02pb"]
+size = Vector2(28, 48)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_5teeq"]
+size = Vector2(24, 10)
+
+[node name="Crusher" type="AnimatableBody2D" unique_id=991643403]
+script = ExtResource("1_altrg")
+travel = Vector2(0, 72)
+motion = 1
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=896542524]
+texture = ExtResource("2_org5b")
+offset = Vector2(0, -56)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=619513363]
+shape = SubResource("RectangleShape2D_t02pb")
+
+[node name="Hazard" type="Area2D" parent="." unique_id=1162145258]
+script = ExtResource("3_627pt")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hazard" unique_id=556548090]
+position = Vector2(0, 18)
+shape = SubResource("RectangleShape2D_5teeq")
