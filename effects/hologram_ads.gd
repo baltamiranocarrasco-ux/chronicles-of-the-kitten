@@ -156,10 +156,11 @@ func _draw_hologram(spot: Dictionary, shift: Vector2) -> void:
 	if index == RECALL:
 		_draw_recall(center, time, unfold, flicker, col)
 	else:
-		var trail := 5 if Engine.time_scale < 1.0 else 0
-		# Con la Q: estela de poses anteriores (motion blur de luz)
+		# Con la Q: estela de poses anteriores (motion blur de luz). Solo dos
+		# copias sin antialias: cada una reconstruye el modelo y es lo más caro
+		var trail := 2 if Engine.time_scale < 1.0 else 0
 		for k in range(trail, 0, -1):
-			_draw_model(index, center, time - k * 0.05, unfold, Color(col, 0.22 * (1.0 - k / 6.0)), true)
+			_draw_model(index, center, time - k * 0.12, unfold, Color(col, 0.2 * (1.0 - k / 3.0) + 0.05), true)
 		_draw_model(index, center, time, unfold, Color(col, flicker), false)
 		if jump:
 			_draw_model(index, center + Vector2(3, -1), time, unfold, Color(col, 0.35), true)
@@ -244,7 +245,7 @@ func _draw_model(index: int, center: Vector2, time: float, unfold: float, col: C
 			back.append(pb)
 	if ghost:
 		if front.size():
-			draw_multiline(front, col, 1.2, true)
+			draw_multiline(front, col, 1.2)
 		return
 	# Cara trasera: 50 % de opacidad y un tono más oscuro
 	if back.size():
