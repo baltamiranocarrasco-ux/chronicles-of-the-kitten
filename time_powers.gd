@@ -22,7 +22,7 @@ const DRAIN_SLOW := 20.0 ## por segundo real: ~1 s de uso = 20 % de la barra
 const MIN_TO_SLOW := 15.0 ## energía mínima para activar el Sandevistan
 const STOP_COST := 50.0 ## cuota fija del Za Warudo (y mínimo para activarlo)
 const STOP_DURATION := 3.0 ## segundos exactos de tiempo detenido
-const REGEN := 18.0 ## por segundo real
+const REGEN := 6.0 ## por segundo real (lenta: las terminales de energía recargan de golpe)
 const REGEN_DELAY := 0.6 ## espera tras usar una habilidad antes de recargar
 const OVERLOAD_TIME := 3.5 ## sin habilidades tras agotar la energía
 const OVERLOAD_SPEED := 0.8 ## multiplicador de velocidad del gato durante la sobrecarga
@@ -51,6 +51,15 @@ func _process(delta: float) -> void:
 	elif Input.is_action_just_pressed("slow_time"):
 		_toggle_slow()
 	_update_energy(real_delta)
+
+
+## Carga instantánea (terminales de energía y baterías). Una carga completa
+## también corta la sobrecarga.
+func recharge(amount: float) -> void:
+	energy = minf(energy + amount, MAX_ENERGY)
+	if energy >= MAX_ENERGY and cooldown > 0.0:
+		cooldown = 0.0
+		overload_changed.emit(false)
 
 
 func is_overloaded() -> bool:

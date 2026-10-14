@@ -6,7 +6,6 @@ const SLIDE_SPEED = 215.0 # velocidad al empezar a deslizarse (Ctrl mientras cor
 const SLIDE_FRICTION = 250.0 # frenado del deslizamiento, px/s²
 const SLIDE_COOLDOWN = 0.35
 const JUMP_VELOCITY = -320.0 # ~52 px de altura con la gravedad por defecto (980)
-const FALL_LIMIT = 40.0 # si cae más abajo (fosos), reaparece
 const SLEEP_AFTER = 8.0 # segundos quieto antes de dar vueltas y acostarse
 
 # Zarpazo (clic izquierdo o J). Los tiempos siguen la animación "attack":
@@ -21,8 +20,25 @@ const ATTACK_BOX = Vector2(26, 22) # zona del golpe, delante del gato
 const ATTACK_BOX_OFFSET = Vector2(15, 3)
 const PUSH_FORCE = 6.0 # empuje al caminar contra objetos sueltos (cajas)
 
+# Vida y daño. Los peligros son Area2D en la capa HAZARD_LAYER con un método
+# touch(player, real_delta) que decide si hacen daño (ver objects/hazards/).
+const MAX_HEALTH = 100.0
+const INVULN_TIME = 1.0 # tras un golpe, sin recibir otro
+const KNOCKBACK = Vector2(150, -170)
+const DEATH_TIME = 0.7
+const HAZARD_LAYER = 8 # capa 4: peligros
+const PICKUP_LAYER = 16 # capa 5: recargas, pistas y meta (también con touch())
+const HOLO_LAYER = 4 # capa 3: hologramas que se vuelven sólidos con el tiempo detenido
+const TOUCH_BOX = Vector2(18, 18) # zona del cuerpo que recibe daño
+const TOUCH_OFFSET = Vector2(0, 4)
+const HURT_COLORS = {&"hit": Color(1.0, 0.35, 0.35), &"burn": Color(1.0, 0.65, 0.35),
+		&"shock": Color(0.55, 0.95, 1.0), &"tick": Color(0.65, 0.9, 1.0)}
+
 signal attacked(dir: float) ## empezó un zarpazo (effects/claw_slash.gd dibuja el arco)
 signal hit_landed(target: Node2D) ## el zarpazo golpeó algo
+signal health_changed(value: float, max_value: float)
+signal hurt_taken(kind: StringName, amount: float)
+signal died
 
 enum State {
 	NORMAL,
@@ -40,6 +56,15 @@ var attack_time := -1.0 ## tiempo desde que empezó el zarpazo; < 0 si no ataca
 var _attack_buffer := 0.0
 var _attack_hits := {} ## lo que ya golpeó este zarpazo (un golpe por objeto)
 var _attack_shape := RectangleShape2D.new()
+@export var fall_limit := 40.0 ## más abajo de esto (vacíos entre edificios) muere
+var health := MAX_HEALTH
+var stun_time := 0.0 ## sin control (golpe o descarga eléctrica)
+var last_hurt := &"hit"
+var _invuln := 0.0
+var _knock := 0.0 ## mientras dura, el retroceso se frena de a poco
+var _dying := 0.0
+var _flash := 0.0
+var _touch_shape := RectangleShape2D.new()
 ## Desplazamiento del sprite mientras da vueltas antes de dormir (lo anima
 ## "settle"). Es solo visual: el cuerpo no se mueve. Mirando a la izquierda
 ## se invierte, igual que el dibujo.
@@ -53,12 +78,17 @@ var settle_offset := 0.0:
 @onready var sprite2D = $Sprite2D
 @onready var time_powers: TimePowers = $TimePowers
 @onready var bond = $BondController
+@onready var hud = $HUD
 
 @onready var spawn_position: Vector2 = global_position
 
 func _ready() -> void:
 	animationplayer.animation_finished.connect(_on_animation_finished)
 	_attack_shape.size = ATTACK_BOX
+	_touch_shape.size = TOUCH_BOX
+	# Con el tiempo detenido los hologramas se vuelven plataformas sólidas
+	time_powers.mode_changed.connect(func(mode):
+		collision_mask = 1 | (HOLO_LAYER if mode == TimePowers.Mode.STOP else 0))
 
 func _physics_process(delta: float) -> void:
 	# El gato ignora la cámara lenta (Sandevistan): usa tiempo real y el
@@ -69,11 +99,24 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity += get_gravity() * delta * time_boost
 
+	var real_delta := delta * time_boost
 	var direction := Input.get_axis("move_left", "move_right")
 	var jump_pressed := Input.is_action_just_pressed("jump")
 	# Con el cursor sobre el gato el clic es para él (bond_controller), no un ataque
 	var attack_pressed: bool = Input.is_action_just_pressed("attack") \
 			and not (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and bond.is_mouse_over())
+	_invuln = maxf(_invuln - real_delta, 0.0)
+	_knock = maxf(_knock - real_delta, 0.0)
+	stun_time = maxf(stun_time - real_delta, 0.0)
+	if _dying > 0.0:
+		_dying -= real_delta
+		if _dying <= 0.0:
+			respawn()
+			return
+	if stun_time > 0.0 or _dying > 0.0:
+		direction = 0.0
+		jump_pressed = false
+		attack_pressed = false
 	_update_rest_state(delta * time_boost, direction, jump_pressed or attack_pressed)
 	if state != State.NORMAL:
 		direction = 0.0
@@ -84,7 +127,8 @@ func _physics_process(delta: float) -> void:
 	var sprinting := Input.is_action_pressed("sprint") and direction != 0.0
 	# La sobrecarga de las habilidades de tiempo deja al gato más lento
 	var speed_mult := TimePowers.OVERLOAD_SPEED if time_powers.is_overloaded() else 1.0
-	if is_attacking() and is_on_floor():
+	# Golpear caminando frena; corriendo (Shift) o deslizándose no se pierde el impulso
+	if is_attacking() and is_on_floor() and not sprinting and not sliding:
 		speed_mult *= ATTACK_MOVE
 	_update_slide(delta * time_boost, direction, sprinting, speed_mult)
 
@@ -94,6 +138,8 @@ func _physics_process(delta: float) -> void:
 
 	if sliding:
 		pass # la velocidad la maneja _update_slide
+	elif _knock > 0.0 and direction == 0.0:
+		velocity.x = move_toward(velocity.x, 0.0, 420.0 * real_delta)
 	elif direction:
 		var target := (SPRINT_SPEED if sprinting else SPEED) * speed_mult
 		# En el aire no se pierde el impulso de un deslizamiento o una carrera
@@ -110,11 +156,13 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	velocity /= time_boost
 	_push_loose_objects()
+	if _dying <= 0.0:
+		_touch_areas(real_delta)
 	if state == State.NORMAL:
 		animations(direction, sprinting)
 
-	if global_position.y > FALL_LIMIT:
-		respawn()
+	if global_position.y > fall_limit and _dying <= 0.0:
+		respawn() # cayó a un vacío entre edificios
 
 	# Mientras da el zarpazo no se da vuelta
 	if is_attacking():
@@ -132,6 +180,11 @@ func respawn() -> void:
 	_set_state(State.NORMAL)
 	attack_time = -1.0
 	_attack_buffer = 0.0
+	stun_time = 0.0
+	_knock = 0.0
+	_dying = 0.0
+	_invuln = INVULN_TIME # un instante de protección al reaparecer
+	heal_full()
 
 # Ctrl mientras corre (Shift) en el suelo: se desliza en la dirección en que
 # mira, frenando hasta la velocidad de carrera. No se puede girar mientras dura.
@@ -251,6 +304,9 @@ func keep_awake() -> void:
 func animations(direction, sprinting := false):
 	if is_attacking():
 		return # "attack" se reproduce entera
+	if _dying > 0.0 or stun_time > 0.0:
+		animationplayer.play("flinch" if _dying <= 0.0 else "fall")
+		return
 	if sliding:
 		animationplayer.play("slide")
 	elif is_on_floor():
@@ -281,7 +337,7 @@ func _update_attack(real_delta: float, pressed: bool) -> void:
 			_attack_query()
 		if attack_time >= ATTACK_TIME:
 			attack_time = -1.0
-	if not is_attacking() and _attack_buffer > 0.0 and state == State.NORMAL and not sliding:
+	if not is_attacking() and _attack_buffer > 0.0 and state == State.NORMAL:
 		_attack_buffer = 0.0
 		attack_time = 0.0
 		idle_time = 0.0
@@ -316,3 +372,72 @@ func _push_loose_objects() -> void:
 		var body := c.get_collider() as RigidBody2D
 		if body and absf(c.get_normal().x) > 0.5:
 			body.apply_central_impulse(-c.get_normal() * PUSH_FORCE)
+
+# --- vida y daño -------------------------------------------------------------------
+
+## Recibe daño. kind: &"hit" golpe (retroceso), &"burn" quemadura,
+## &"shock" descarga (aturde más tiempo) o &"tick" daño continuo (sin
+## retroceso ni invulnerabilidad, p. ej. charcos electrificados).
+func hurt(amount: float, from: Vector2, kind: StringName = &"hit") -> void:
+	if _dying > 0.0:
+		return
+	if kind != &"tick":
+		if _invuln > 0.0:
+			return
+		_invuln = INVULN_TIME
+		var dir := signf(global_position.x - from.x)
+		if dir == 0.0:
+			dir = -facing()
+		velocity = Vector2(dir * KNOCKBACK.x, KNOCKBACK.y)
+		_knock = 0.4
+		stun_time = 0.5 if kind == &"shock" else 0.22
+		sliding = false
+		attack_time = -1.0
+		if state != State.NORMAL:
+			_set_state(State.NORMAL)
+	last_hurt = kind
+	_flash = 1.0
+	health = maxf(health - amount, 0.0)
+	health_changed.emit(health, MAX_HEALTH)
+	hurt_taken.emit(kind, amount)
+	if health <= 0.0:
+		_die()
+
+func heal_full() -> void:
+	health = MAX_HEALTH
+	health_changed.emit(health, MAX_HEALTH)
+
+func is_dying() -> bool:
+	return _dying > 0.0
+
+func _die() -> void:
+	_dying = DEATH_TIME
+	velocity = Vector2(0.0, -140.0)
+	attack_time = -1.0
+	died.emit()
+
+## Peligros, recargas, pistas y meta que toca el cuerpo. Consulta directa al
+## espacio físico: funciona también con el tiempo detenido.
+func _touch_areas(real_delta: float) -> void:
+	var query := PhysicsShapeQueryParameters2D.new()
+	query.shape = _touch_shape
+	query.transform = Transform2D(0.0, global_position + TOUCH_OFFSET)
+	query.collide_with_bodies = false
+	query.collide_with_areas = true
+	query.collision_mask = HAZARD_LAYER | PICKUP_LAYER
+	for hit in get_world_2d().direct_space_state.intersect_shape(query, 16):
+		var area = hit.collider
+		if area and area.has_method("touch"):
+			area.touch(self, real_delta)
+		if _dying > 0.0:
+			return
+
+func _process(delta: float) -> void:
+	# Destello del color del daño y parpadeo mientras es invulnerable
+	_flash = maxf(_flash - delta / Engine.time_scale * 4.0, 0.0)
+	var c := Color.WHITE.lerp(HURT_COLORS.get(last_hurt, Color.RED), _flash)
+	if _invuln > 0.0 and fmod(_invuln, 0.14) < 0.06:
+		c.a = 0.35
+	if _dying > 0.0:
+		c = Color(1.0, 0.4, 0.4, clampf(_dying / DEATH_TIME, 0.0, 1.0))
+	sprite2D.modulate = c

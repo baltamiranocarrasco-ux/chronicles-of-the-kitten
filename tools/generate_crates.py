@@ -13,6 +13,8 @@ Salida en objects/:
                    abolladuras de cada golpe (resiste 3).
   crate_box.png    42x33 (14x11 en el juego): caja de cartón mojada por la
                    lluvia. Se rompe de un golpe.
+  crate_armored.png 3 cuadros de 54x96 (18x32 en el juego): contenedor
+                   blindado que bloquea pasillos. Resiste 3 golpes.
 """
 
 import math
@@ -221,15 +223,87 @@ def cardboard_box():
     return finish(img)
 
 
-def main():
-    frames = [metal_crate(dmg) for dmg in range(3)]
+# --- contenedor blindado ---------------------------------------------------------
+
+ARMOR = (52, 58, 70, 255)
+ARMOR_HI = (128, 138, 160, 255)
+ARMOR_DK = (24, 27, 36, 255)
+WARN_LIGHT = (255, 150, 40)
+
+
+def armored_container(damage):
+    W, H = 18, 32
+    img, d = canvas(W, H)
+    box(d, 0, 0, W, H, OUTLINE, r=1.0)
+    box(d, 0.5, 0.5, W - 0.5, H - 0.5, ARMOR, r=0.8)
+    box(d, 0.5, 0.5, W - 0.5, 2.2, ARMOR_HI, r=0.6)
+    box(d, 0.5, H - 2.2, W - 0.5, H - 0.5, ARMOR_DK, r=0.6)
+    # Costillas verticales de refuerzo
+    for x in (3.0, 7.0, 11.0, 15.0):
+        box(d, x - 1.0, 3.0, x + 1.0, H - 3.0, ARMOR_DK)
+        line(d, [(x - 0.7, 3.2), (x - 0.7, H - 3.2)], ARMOR_HI, 0.35)
+    # Banda de peligro y placa central con cerradura de volante
+    box(d, 0.5, 13.0, W - 0.5, 16.0, ARMOR_DK)
+    for i in range(8):
+        x = 0.8 + i * 2.3
+        d.polygon([(u(x), u(13.3)), (u(x + 1.1), u(13.3)), (u(x + 0.2), u(15.7)), (u(x - 0.9), u(15.7))],
+                  fill=HAZARD)
+    cx, cy = W / 2, 22.0
+    d.ellipse([u(cx - 3.2), u(cy - 3.2), u(cx + 3.2), u(cy + 3.2)], fill=ARMOR_DK)
+    d.ellipse([u(cx - 2.6), u(cy - 2.6), u(cx + 2.6), u(cy + 2.6)], outline=ARMOR_HI, width=int(u(0.45)))
+    for a in range(3):
+        ang = a * math.pi / 3
+        line(d, [(cx - math.cos(ang) * 2.6, cy - math.sin(ang) * 2.6),
+                 (cx + math.cos(ang) * 2.6, cy + math.sin(ang) * 2.6)], ARMOR_HI, 0.35)
+    # Remaches en el marco
+    for y in (2.0, H - 2.0):
+        for x in (1.6, W - 1.6):
+            d.ellipse([u(x - 0.5), u(y - 0.5), u(x + 0.5), u(y + 0.5)], fill=ARMOR_HI)
+    # Luz de advertencia arriba (roja cuando está por ceder)
+    led = LED_BAD if damage >= 2 else WARN_LIGHT
+    img.alpha_composite(glow_layer(img.size, lambda g: g.ellipse(
+        [u(cx - 1.6), u(5.2 - 1.6), u(cx + 1.6), u(5.2 + 1.6)], fill=led + (160,)), 0.6))
+    d.ellipse([u(cx - 0.7), u(5.2 - 0.7), u(cx + 0.7), u(5.2 + 0.7)], fill=(255, 240, 220, 255))
+    # Daño: arañazos al rojo y una abolladura por golpe
+    for k, (sx, sy) in enumerate([(12.0, 6.5), (7.0, 18.5)][:damage]):
+        dent = (sx - 3.0, sy + 3.5)
+        d.ellipse([u(dent[0] - 2.6), u(dent[1] - 1.8), u(dent[0] + 2.6), u(dent[1] + 1.8)], fill=ARMOR_DK)
+        for j in range(3):
+            a = (sx + j * 1.4, sy + j * 0.4)
+            b = (a[0] - 5.0, a[1] + 7.0)
+            img.alpha_composite(glow_layer(img.size, lambda g, a=a, b=b: line(g, [a, b], (255, 120, 40, 200), 0.9), 0.35))
+            line(d, [a, b], (20, 18, 26, 255), 0.55)
+            line(d, [(a[0] + 0.15, a[1]), (b[0] + 0.15, b[1])], (255, 214, 170, 255), 0.22)
+    if damage >= 2:
+        line(d, [(W - 1.0, 26.0), (W - 2.5, 27.5), (W - 1.2, 29.5)], OUTLINE, 0.4)
+    rim(img, W, H)
+    rnd = random.Random(11)
+
+    def grime(g):
+        for _ in range(60):
+            x, y = rnd.uniform(0.8, W - 0.8), rnd.uniform(H * 0.5, H - 0.8)
+            r = rnd.uniform(0.2, 0.7)
+            g.ellipse([u(x - r), u(y - r), u(x + r), u(y + r)], fill=(18, 14, 12, rnd.randint(30, 90)))
+        for _ in range(14):
+            x, y = rnd.uniform(1.5, W - 1.5), rnd.uniform(1.5, H - 2)
+            line(g, [(x, y), (x, y + rnd.uniform(1.0, 2.6))], (180, 200, 240, 70), 0.2)
+    translucent(img, grime)
+    return finish(img)
+
+
+def sheet(frames, path):
     fw, fh = frames[0].size
-    sheet = Image.new("RGBA", (fw * len(frames), fh), (0, 0, 0, 0))
+    out = Image.new("RGBA", (fw * len(frames), fh), (0, 0, 0, 0))
     for i, f in enumerate(frames):
-        sheet.alpha_composite(f, (i * fw, 0))
-    sheet.save(OUT_DIR / "crate_metal.png")
+        out.alpha_composite(f, (i * fw, 0))
+    out.save(path)
+
+
+def main():
+    sheet([metal_crate(dmg) for dmg in range(3)], OUT_DIR / "crate_metal.png")
+    sheet([armored_container(dmg) for dmg in range(3)], OUT_DIR / "crate_armored.png")
     cardboard_box().save(OUT_DIR / "crate_box.png")
-    print(f"Guardado {OUT_DIR / 'crate_metal.png'} y {OUT_DIR / 'crate_box.png'}")
+    print(f"Guardado crate_metal.png, crate_armored.png y crate_box.png en {OUT_DIR}")
 
 
 if __name__ == "__main__":

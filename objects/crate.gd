@@ -3,12 +3,16 @@ extends RigidBody2D
 ## Caja que el gato puede romper a zarpazos (movment.gd llama a take_hit).
 ##   METAL: contenedor de acero, resiste 3 golpes; cada uno deja arañazos y
 ##          lo empuja un poco.
-##   BOX  : caja de cartón, se rompe de un golpe.
-## Es un cuerpo rígido: cae, se apila, rueda y el gato la empuja al caminar.
+##   BOX  : caja ligera de fibra, se rompe de un golpe (ideal para romperla
+##          corriendo con la Q sin perder el impulso).
+##   ARMORED: contenedor blindado de 2 tiles de alto, anclado: bloquea
+##          pasillos hasta recibir 3 golpes.
+## Es un cuerpo rígido: cae, se apila, rueda y el gato la empuja al caminar
+## (salvo si está anclada: `anchored`, y el blindado siempre).
 ## Con el tiempo detenido (R) los golpes se guardan y se aplican todos juntos
 ## al reanudarse.
 
-enum Kind { METAL, BOX }
+enum Kind { METAL, BOX, ARMORED }
 
 const DEBRIS := preload("res://objects/debris.gd")
 const SETTINGS := {
@@ -22,6 +26,11 @@ const SETTINGS := {
 		hp = 1, mass = 0.6, knock = Vector2(160, -110),
 		colors = [Color(0.5, 0.36, 0.23), Color(0.63, 0.47, 0.31), Color(0.34, 0.24, 0.15), Color(0.77, 0.67, 0.46)],
 	},
+	Kind.ARMORED: {
+		texture = preload("res://objects/crate_armored.png"), frames = 3, size = Vector2(18, 32),
+		hp = 3, mass = 8.0, knock = Vector2(0, 0),
+		colors = [Color(0.2, 0.23, 0.27), Color(0.5, 0.54, 0.63), Color(0.1, 0.11, 0.14), Color(0.92, 0.73, 0.19)],
+	},
 }
 const DETAIL := 3.0 ## la textura tiene el triple de detalle (ver tools/generate_crates.py)
 const FLASH := Color(2.2, 2.4, 2.6)
@@ -29,6 +38,12 @@ const FLASH := Color(2.2, 2.4, 2.6)
 @export var kind := Kind.METAL:
 	set(value):
 		kind = value
+		if is_node_ready():
+			_configure()
+
+@export var anchored := false: ## fija en su lugar (no la empujan ni la tiran)
+	set(value):
+		anchored = value
 		if is_node_ready():
 			_configure()
 
@@ -66,6 +81,8 @@ func _configure() -> void:
 	mat.friction = 0.9
 	mat.bounce = 0.05
 	physics_material_override = mat
+	freeze_mode = RigidBody2D.FREEZE_MODE_STATIC
+	freeze = anchored or kind == Kind.ARMORED
 	# Con muchos golpes seguidos no se pone a girar como una moneda
 	angular_damp = 3.0
 
@@ -120,7 +137,7 @@ func _break(dir: Vector2) -> void:
 func _spawn_debris(dir: Vector2, pieces: int, sparks_only: bool) -> void:
 	var d := Node2D.new()
 	d.set_script(DEBRIS)
-	d.setup(SETTINGS[kind].size, SETTINGS[kind].colors, dir.x, pieces, sparks_only, kind == Kind.METAL,
+	d.setup(SETTINGS[kind].size, SETTINGS[kind].colors, dir.x, pieces, sparks_only, kind != Kind.BOX,
 			_floor_below())
 	get_parent().add_child(d)
 	d.global_position = global_position

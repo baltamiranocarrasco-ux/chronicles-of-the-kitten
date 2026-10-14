@@ -7,6 +7,8 @@
 [ext_resource type="Script" path="res://effects/spine_meter.gd" id="5_spine"]
 [ext_resource type="Script" path="res://effects/bond_controller.gd" id="6_bond"]
 [ext_resource type="Script" path="res://effects/claw_slash.gd" id="7_slash"]
+[ext_resource type="Script" path="res://ui/hud.gd" id="8_hud"]
+[ext_resource type="Script" path="res://effects/damage_fx.gd" id="9_dmg"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
 size = Vector2(20, 12)
@@ -349,3 +351,9 @@ script = ExtResource("6_bond")
 
 [node name="ClawSlash" type="Node2D" parent="."]
 script = ExtResource("7_slash")
+
+[node name="DamageFX" type="Node2D" parent="."]
+script = ExtResource("9_dmg")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("8_hud")
