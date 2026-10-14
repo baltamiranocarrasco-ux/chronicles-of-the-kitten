@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://objects/crate.gd" id="1_qx60w"]
+
+[node name="Crate" type="RigidBody2D" unique_id=887179917]
+script = ExtResource("1_qx60w")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1683277638]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1256530318]

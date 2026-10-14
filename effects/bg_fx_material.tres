@@ -1,0 +1,10 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://effects/background.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/smear = 0.0
+shader_parameter/freeze = 0.0
+shader_parameter/allow_smear = false
+shader_parameter/smear_px = 24.0
